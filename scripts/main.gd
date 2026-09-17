@@ -1,0 +1,551 @@
+extends Node
+
+const BG := Color("#07090E")
+const PANEL := Color("#111722")
+const PANEL_2 := Color("#171E2B")
+const TEXT := Color("#F5F7FA")
+const MUTED := Color("#8C98AA")
+const CYAN := Color("#72E6FF")
+const ORANGE := Color("#FFB36A")
+const GREEN := Color("#79F2B0")
+
+var world: Node3D
+var board_view: BoardView
+var camera_rig: CameraRig
+var ui: CanvasLayer
+var overlay_root: Control
+var hud: Control
+var board: BoardLogic
+var ai: AIEngine
+var score_store := ScoreStore.new()
+
+var mode := "CPU"
+var difficulty := "SMART"
+var board_size := 3
+var current_player := 1
+var game_over := false
+var player_times := {1: 0.0, 2: 0.0}
+var human_moves := 0
+var total_moves := 0
+var ai_busy := false
+var last_move := -1
+
+var timer_p1: Label
+var timer_p2: Label
+var turn_label: Label
+var layer_box: VBoxContainer
+var result_panel: PanelContainer
+
+func _ready() -> void:
+	_build_world()
+	_build_ui()
+	_show_home()
+
+func _process(delta: float) -> void:
+	if board != null and not game_over and not ai_busy:
+		if mode == "PVP" or current_player == 1:
+			player_times[current_player] += delta
+			_refresh_timers()
+
+func _build_world() -> void:
+	world = Node3D.new()
+	world.name = "World"
+	add_child(world)
+
+	var env_node := WorldEnvironment.new()
+	var env := Environment.new()
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = BG
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color("#A9C7E8")
+	env.ambient_light_energy = 0.55
+	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.glow_enabled = true
+	env.glow_intensity = 0.85
+	env.glow_bloom = 0.18
+	env_node.environment = env
+	world.add_child(env_node)
+
+	var key := DirectionalLight3D.new()
+	key.rotation_degrees = Vector3(-52, -32, 0)
+	key.light_color = Color("#DDEAFF")
+	key.light_energy = 1.25
+	key.shadow_enabled = true
+	world.add_child(key)
+
+	var fill := OmniLight3D.new()
+	fill.position = Vector3(-4, 5, 4)
+	fill.light_color = CYAN
+	fill.light_energy = 5.0
+	fill.omni_range = 10.0
+	world.add_child(fill)
+
+	var rim := OmniLight3D.new()
+	rim.position = Vector3(5, 2, -4)
+	rim.light_color = ORANGE
+	rim.light_energy = 3.8
+	rim.omni_range = 9.0
+	world.add_child(rim)
+
+	camera_rig = CameraRig.new()
+	world.add_child(camera_rig)
+
+func _build_ui() -> void:
+	ui = CanvasLayer.new()
+	add_child(ui)
+	overlay_root = Control.new()
+	overlay_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui.add_child(overlay_root)
+
+func _clear_ui() -> void:
+	for child in overlay_root.get_children():
+		child.queue_free()
+
+func _show_home() -> void:
+	_clear_board()
+	_clear_ui()
+	var bg := ColorRect.new()
+	bg.color = Color(0.02, 0.025, 0.035, 0.82)
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay_root.add_child(bg)
+
+	var v := VBoxContainer.new()
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_theme_constant_override("separation", 18)
+	v.set_anchors_preset(Control.PRESET_CENTER)
+	v.position = Vector2(-390, -360)
+	v.size = Vector2(780, 720)
+	overlay_root.add_child(v)
+
+	var logo := Label.new()
+	logo.text = "TIC³"
+	logo.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	logo.add_theme_font_size_override("font_size", 84)
+	logo.add_theme_color_override("font_color", TEXT)
+	v.add_child(logo)
+
+	var subtitle := Label.new()
+	subtitle.text = "THINK IN THREE DIMENSIONS"
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.add_theme_font_size_override("font_size", 19)
+	subtitle.add_theme_color_override("font_color", MUTED)
+	v.add_child(subtitle)
+
+	v.add_child(_spacer(34))
+	v.add_child(_big_button("PLAYER vs COMPUTER", func(): _show_setup("CPU")))
+	v.add_child(_big_button("PLAYER vs PLAYER", func(): _show_setup("PVP")))
+	v.add_child(_ghost_button("HIGHSCORES", _show_highscores))
+
+	var hint := Label.new()
+	hint.text = "3×3×3  •  4×4×4  •  5×5×5"
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.add_theme_font_size_override("font_size", 18)
+	hint.add_theme_color_override("font_color", MUTED)
+	v.add_child(hint)
+
+func _show_setup(selected_mode: String) -> void:
+	mode = selected_mode
+	_clear_ui()
+	var bg := ColorRect.new()
+	bg.color = Color(0.02, 0.025, 0.035, 0.90)
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay_root.add_child(bg)
+
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 18)
+	v.set_anchors_preset(Control.PRESET_CENTER)
+	v.position = Vector2(-410, -500)
+	v.size = Vector2(820, 1000)
+	overlay_root.add_child(v)
+
+	var back := _ghost_button("← BACK", _show_home)
+	v.add_child(back)
+	var title := _title("PLAYER vs COMPUTER" if mode == "CPU" else "PLAYER vs PLAYER")
+	v.add_child(title)
+	v.add_child(_section_label("BOARD"))
+	for n in [3, 4, 5]:
+		var btn := _big_button("%d × %d × %d" % [n, n, n], func(size = n): board_size = size; _refresh_setup(v))
+		btn.set_meta("board_size", n)
+		v.add_child(btn)
+	if mode == "CPU":
+		v.add_child(_section_label("COMPUTER"))
+		for d in ["CASUAL", "SMART", "EXPERT"]:
+			var dbtn := _choice_button(d, func(diff = d): difficulty = diff; _refresh_setup(v))
+			dbtn.set_meta("difficulty", d)
+			v.add_child(dbtn)
+	v.add_child(_spacer(16))
+	v.add_child(_accent_button("START GAME", _start_game))
+	_refresh_setup(v)
+
+func _refresh_setup(container: VBoxContainer) -> void:
+	for child in container.get_children():
+		if child.has_meta("board_size"):
+			_style_choice(child, int(child.get_meta("board_size")) == board_size)
+		if child.has_meta("difficulty"):
+			_style_choice(child, String(child.get_meta("difficulty")) == difficulty)
+
+func _start_game() -> void:
+	_clear_ui()
+	_clear_board()
+	board = BoardLogic.new(board_size)
+	ai = AIEngine.new(board)
+	current_player = 1
+	game_over = false
+	ai_busy = false
+	player_times = {1: 0.0, 2: 0.0}
+	human_moves = 0
+	total_moves = 0
+	last_move = -1
+
+	board_view = BoardView.new()
+	board_view.cell_pressed.connect(_on_cell_pressed)
+	world.add_child(board_view)
+	board_view.setup(board)
+	camera_rig.reset_view(board_size)
+	_build_hud()
+	_refresh_hud()
+
+func _clear_board() -> void:
+	if is_instance_valid(board_view):
+		board_view.queue_free()
+	board_view = null
+	board = null
+
+func _build_hud() -> void:
+	hud = Control.new()
+	hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay_root.add_child(hud)
+
+	var top := HBoxContainer.new()
+	top.position = Vector2(34, 34)
+	top.size = Vector2(1012, 110)
+	top.add_theme_constant_override("separation", 12)
+	hud.add_child(top)
+	var home_btn := _small_button("‹", _show_home)
+	home_btn.custom_minimum_size = Vector2(72, 72)
+	top.add_child(home_btn)
+	var mode_label := Label.new()
+	mode_label.text = "%d×%d×%d  •  %s" % [board_size, board_size, board_size, difficulty if mode == "CPU" else "LOCAL"]
+	mode_label.add_theme_font_size_override("font_size", 24)
+	mode_label.add_theme_color_override("font_color", TEXT)
+	mode_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mode_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	top.add_child(mode_label)
+	var reset_btn := _small_button("RESET VIEW", func(): camera_rig.reset_view(board_size))
+	top.add_child(reset_btn)
+
+	var clocks := HBoxContainer.new()
+	clocks.position = Vector2(34, 158)
+	clocks.size = Vector2(1012, 108)
+	clocks.add_theme_constant_override("separation", 12)
+	hud.add_child(clocks)
+	var p1_panel := _clock_panel("X", CYAN)
+	timer_p1 = p1_panel.get_node("Margin/V/Time")
+	clocks.add_child(p1_panel)
+	var p2_panel := _clock_panel("CPU" if mode == "CPU" else "O", ORANGE)
+	timer_p2 = p2_panel.get_node("Margin/V/Time")
+	clocks.add_child(p2_panel)
+
+	turn_label = Label.new()
+	turn_label.position = Vector2(34, 284)
+	turn_label.size = Vector2(1012, 52)
+	turn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	turn_label.add_theme_font_size_override("font_size", 24)
+	turn_label.add_theme_color_override("font_color", MUTED)
+	hud.add_child(turn_label)
+
+	var right_panel := PanelContainer.new()
+	right_panel.position = Vector2(892, 430)
+	right_panel.size = Vector2(150, 700)
+	_apply_panel_style(right_panel, Color(0.055, 0.075, 0.105, 0.90), 24)
+	hud.add_child(right_panel)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 18)
+	margin.add_theme_constant_override("margin_bottom", 18)
+	right_panel.add_child(margin)
+	layer_box = VBoxContainer.new()
+	layer_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	layer_box.add_theme_constant_override("separation", 10)
+	margin.add_child(layer_box)
+	var all_btn := _layer_button("ALL", -1)
+	layer_box.add_child(all_btn)
+	for z in range(board_size - 1, -1, -1):
+		layer_box.add_child(_layer_button(str(z + 1), z))
+	layer_box.add_child(_spacer(16))
+	layer_box.add_child(_small_button("STACK", func(): board_view.toggle_exploded()))
+
+	var help := Label.new()
+	help.text = "Drag to rotate  •  Pinch / wheel to zoom\nTap a layer number to isolate it"
+	help.position = Vector2(48, 1745)
+	help.size = Vector2(850, 80)
+	help.add_theme_font_size_override("font_size", 18)
+	help.add_theme_color_override("font_color", MUTED)
+	hud.add_child(help)
+
+func _clock_panel(name_text: String, accent: Color) -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(500, 108)
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_apply_panel_style(panel, PANEL, 24)
+	var margin := MarginContainer.new()
+	margin.name = "Margin"
+	for side in ["margin_left", "margin_right"]:
+		margin.add_theme_constant_override(side, 24)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	panel.add_child(margin)
+	var v := VBoxContainer.new()
+	v.name = "V"
+	margin.add_child(v)
+	var who := Label.new()
+	who.text = name_text
+	who.add_theme_font_size_override("font_size", 16)
+	who.add_theme_color_override("font_color", accent)
+	v.add_child(who)
+	var time := Label.new()
+	time.name = "Time"
+	time.text = "00:00.00"
+	time.add_theme_font_size_override("font_size", 31)
+	time.add_theme_color_override("font_color", TEXT)
+	v.add_child(time)
+	return panel
+
+func _layer_button(text: String, layer: int) -> Button:
+	var b := _small_button(text, func(): board_view.set_focus_layer(layer))
+	b.custom_minimum_size = Vector2(108, 64)
+	return b
+
+func _on_cell_pressed(idx: int) -> void:
+	if game_over or ai_busy or board == null:
+		return
+	if mode == "CPU" and current_player != 1:
+		return
+	_play_move(idx, current_player)
+
+func _play_move(idx: int, player: int) -> void:
+	if not board.play(idx, player):
+		return
+	board_view.place_piece(idx, player)
+	last_move = idx
+	total_moves += 1
+	if mode == "CPU" and player == 1:
+		human_moves += 1
+	Input.vibrate_handheld(18)
+	var win_line := board.check_win_from(idx, player)
+	if not win_line.is_empty():
+		_finish_game(player, win_line)
+		return
+	if board.is_full():
+		_finish_game(0, PackedInt32Array())
+		return
+	current_player = 2 if current_player == 1 else 1
+	_refresh_hud()
+	if mode == "CPU" and current_player == 2:
+		_take_ai_turn()
+
+func _take_ai_turn() -> void:
+	ai_busy = true
+	_refresh_hud()
+	await get_tree().create_timer(0.16).timeout
+	var move := ai.choose_move(difficulty, 2)
+	ai_busy = false
+	if move >= 0 and not game_over:
+		_play_move(move, 2)
+
+func _finish_game(winner: int, line: PackedInt32Array) -> void:
+	game_over = true
+	ai_busy = false
+	if winner != 0:
+		board_view.show_winning_line(line)
+		Input.vibrate_handheld(80)
+	_show_result(winner)
+
+func _show_result(winner: int) -> void:
+	result_panel = PanelContainer.new()
+	result_panel.position = Vector2(110, 1320)
+	result_panel.size = Vector2(760, 330)
+	_apply_panel_style(result_panel, Color(0.04, 0.055, 0.08, 0.97), 32)
+	hud.add_child(result_panel)
+	var margin := MarginContainer.new()
+	for side in ["margin_left", "margin_right"]:
+		margin.add_theme_constant_override(side, 34)
+	margin.add_theme_constant_override("margin_top", 26)
+	margin.add_theme_constant_override("margin_bottom", 26)
+	result_panel.add_child(margin)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 12)
+	margin.add_child(v)
+	var title := Label.new()
+	var extra := ""
+	if winner == 0:
+		title.text = "DRAW"
+	elif mode == "CPU" and winner == 1:
+		title.text = "YOU WIN"
+		var r := score_store.record_score(board_size, difficulty, player_times[1], human_moves)
+		extra = "  •  #%d" % int(r["rank"]) if int(r["rank"]) > 0 else ""
+	elif mode == "CPU":
+		title.text = "CPU WINS"
+	else:
+		title.text = "PLAYER %d WINS" % winner
+	title.add_theme_font_size_override("font_size", 44)
+	title.add_theme_color_override("font_color", GREEN if winner == 1 else TEXT)
+	v.add_child(title)
+	var meta := Label.new()
+	if mode == "CPU":
+		meta.text = "%s%s  •  %d moves" % [_format_time(player_times[1]), extra, human_moves]
+	else:
+		meta.text = "X %s  •  O %s" % [_format_time(player_times[1]), _format_time(player_times[2])]
+	meta.add_theme_font_size_override("font_size", 22)
+	meta.add_theme_color_override("font_color", MUTED)
+	v.add_child(meta)
+	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 12)
+	v.add_child(buttons)
+	buttons.add_child(_accent_button("REMATCH", _start_game))
+	buttons.add_child(_ghost_button("HOME", _show_home))
+
+func _refresh_hud() -> void:
+	_refresh_timers()
+	if turn_label == null:
+		return
+	if ai_busy:
+		turn_label.text = "CPU THINKING…"
+	elif current_player == 1:
+		turn_label.text = "YOUR TURN — X" if mode == "CPU" else "PLAYER 1 — X"
+	else:
+		turn_label.text = "CPU — O" if mode == "CPU" else "PLAYER 2 — O"
+
+func _refresh_timers() -> void:
+	if timer_p1:
+		timer_p1.text = _format_time(player_times[1])
+	if timer_p2:
+		timer_p2.text = "THINKING…" if mode == "CPU" and ai_busy else (_format_time(player_times[2]) if mode == "PVP" else "—")
+
+func _show_highscores() -> void:
+	_clear_ui()
+	var bg := ColorRect.new()
+	bg.color = Color(0.02, 0.025, 0.035, 0.94)
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay_root.add_child(bg)
+	var v := VBoxContainer.new()
+	v.position = Vector2(70, 100)
+	v.size = Vector2(940, 1650)
+	v.add_theme_constant_override("separation", 12)
+	overlay_root.add_child(v)
+	v.add_child(_ghost_button("← BACK", _show_home))
+	v.add_child(_title("HIGHSCORES"))
+	for n in [3, 4, 5]:
+		for d in ["CASUAL", "SMART", "EXPERT"]:
+			var entries := score_store.get_scores(n, d)
+			if entries.is_empty():
+				continue
+			v.add_child(_section_label("%d×%d×%d  •  %s" % [n, n, n, d]))
+			for i in range(min(5, entries.size())):
+				var e = entries[i]
+				var row := Label.new()
+				row.text = "#%d     %s     %d moves     %s" % [i + 1, _format_time(float(e["time"])), int(e["moves"]), String(e["date"])]
+				row.add_theme_font_size_override("font_size", 22)
+				row.add_theme_color_override("font_color", TEXT if i == 0 else MUTED)
+				v.add_child(row)
+	if v.get_child_count() <= 2:
+		var empty := Label.new()
+		empty.text = "No records yet. Beat the computer to set the first one."
+		empty.add_theme_font_size_override("font_size", 22)
+		empty.add_theme_color_override("font_color", MUTED)
+		v.add_child(empty)
+
+func _format_time(seconds: float) -> String:
+	var total_cs := int(seconds * 100.0)
+	var mins := int(total_cs / 6000)
+	var secs := int(total_cs / 100) % 60
+	var cs := total_cs % 100
+	return "%02d:%02d.%02d" % [mins, secs, cs]
+
+func _big_button(text: String, callback: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = Vector2(760, 92)
+	b.add_theme_font_size_override("font_size", 25)
+	b.pressed.connect(callback)
+	_style_button(b, PANEL_2, TEXT, 24)
+	return b
+
+func _choice_button(text: String, callback: Callable) -> Button:
+	return _big_button(text, callback)
+
+func _accent_button(text: String, callback: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = Vector2(320, 82)
+	b.add_theme_font_size_override("font_size", 24)
+	b.pressed.connect(callback)
+	_style_button(b, CYAN, Color("#031019"), 22)
+	return b
+
+func _ghost_button(text: String, callback: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = Vector2(280, 70)
+	b.add_theme_font_size_override("font_size", 21)
+	b.pressed.connect(callback)
+	_style_button(b, Color(0.08, 0.10, 0.14, 0.70), TEXT, 20)
+	return b
+
+func _small_button(text: String, callback: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = Vector2(130, 66)
+	b.add_theme_font_size_override("font_size", 17)
+	b.pressed.connect(callback)
+	_style_button(b, Color(0.07, 0.09, 0.13, 0.93), TEXT, 18)
+	return b
+
+func _style_choice(b: Button, active: bool) -> void:
+	_style_button(b, Color(0.12, 0.20, 0.25, 1.0) if active else PANEL_2, CYAN if active else TEXT, 24)
+
+func _style_button(b: Button, color: Color, font_color: Color, radius: int) -> void:
+	b.add_theme_color_override("font_color", font_color)
+	b.add_theme_color_override("font_hover_color", font_color)
+	for state in ["normal", "hover", "pressed", "focus"]:
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = color.lightened(0.05) if state == "hover" else (color.darkened(0.08) if state == "pressed" else color)
+		sb.corner_radius_top_left = radius
+		sb.corner_radius_top_right = radius
+		sb.corner_radius_bottom_left = radius
+		sb.corner_radius_bottom_right = radius
+		sb.content_margin_left = 20
+		sb.content_margin_right = 20
+		b.add_theme_stylebox_override(state, sb)
+
+func _apply_panel_style(panel: PanelContainer, color: Color, radius: int) -> void:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = color
+	sb.corner_radius_top_left = radius
+	sb.corner_radius_top_right = radius
+	sb.corner_radius_bottom_left = radius
+	sb.corner_radius_bottom_right = radius
+	panel.add_theme_stylebox_override("panel", sb)
+
+func _title(text: String) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.add_theme_font_size_override("font_size", 46)
+	l.add_theme_color_override("font_color", TEXT)
+	return l
+
+func _section_label(text: String) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.add_theme_font_size_override("font_size", 18)
+	l.add_theme_color_override("font_color", MUTED)
+	return l
+
+func _spacer(h: float) -> Control:
+	var c := Control.new()
+	c.custom_minimum_size = Vector2(1, h)
+	return c
