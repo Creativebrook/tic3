@@ -11,9 +11,6 @@ permissions:
 env:
   GODOT_VERSION: "4.3"
   EXPORT_NAME: "tic3-debug"
-  GODOT_ANDROID_KEYSTORE_DEBUG_PATH: "/github/home/.android/debug.keystore"
-  GODOT_ANDROID_KEYSTORE_DEBUG_USER: "androiddebugkey"
-  GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: "android"
 
 jobs:
   android-debug:
@@ -57,11 +54,10 @@ jobs:
           if [ ! -d "$ANDROID_HOME/platforms/android-34" ] || [ ! -d "$ANDROID_HOME/build-tools/34.0.0" ]; then
             yes | sdkmanager --sdk_root="$ANDROID_HOME" "platform-tools" "build-tools;34.0.0" "platforms;android-34" || true
           fi
-
           test -d "$ANDROID_HOME/platforms/android-34"
           test -d "$ANDROID_HOME/build-tools/34.0.0"
 
-          mkdir -p ~/.android
+          mkdir -p ~/.android .godot
           if [ ! -f ~/.android/debug.keystore ]; then
             keytool -genkeypair -v \
               -keystore ~/.android/debug.keystore \
@@ -74,6 +70,23 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US"
           fi
           keytool -list -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey
+
+          cat > .godot/export_credentials.cfg <<'EOF'
+          [preset.0.options]
+          keystore/debug="/github/home/.android/debug.keystore"
+          keystore/debug_user="androiddebugkey"
+          keystore/debug_password="android"
+          keystore/release=""
+          keystore/release_user=""
+          keystore/release_password=""
+          EOF
+
+          echo "--- Android editor settings ---"
+          grep -n 'export/android' "$SETTINGS" || true
+          echo "--- Export credentials ---"
+          cat .godot/export_credentials.cfg
+          echo "--- Android templates ---"
+          ls -lah ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/
 
       - name: Parse project and import resources
         run: godot --headless --verbose --editor --quit --path .
