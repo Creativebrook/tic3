@@ -33,21 +33,39 @@ jobs:
           mkdir -p ~/.config/
           mv /root/.config/godot ~/.config/godot
           mv /root/.local/share/godot/export_templates/${GODOT_VERSION}.stable ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          test -f /root/debug.keystore
+          test -f ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/android_release.apk
           echo "Java: $(readlink -f $(command -v java))"
           echo "Android SDK: $ANDROID_HOME"
-          test -f /root/debug.keystore
-          test -f ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/android_debug.apk
+          find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f \( -name apksigner -o -name zipalign \) -print
 
       - name: Parse project and import resources
         run: godot --headless --verbose --editor --quit --path .
 
-      - name: Build debug APK
+      - name: Build unsigned Android APK
         shell: bash
         run: |
           set -euxo pipefail
           mkdir -p build/android
-          godot --headless --verbose --path . --export-debug "Android Debug" "build/android/${EXPORT_NAME}.apk"
-          test -f "build/android/${EXPORT_NAME}.apk"
+          godot --headless --verbose --path . --export-release "Android Debug" "build/android/tic3-unsigned.apk"
+          test -f build/android/tic3-unsigned.apk
+
+      - name: Align and sign debug APK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          BUILD_TOOLS_DIR="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          test -x "$BUILD_TOOLS_DIR/zipalign"
+          test -x "$BUILD_TOOLS_DIR/apksigner"
+          "$BUILD_TOOLS_DIR/zipalign" -f -p 4 build/android/tic3-unsigned.apk build/android/tic3-aligned.apk
+          "$BUILD_TOOLS_DIR/apksigner" sign \
+            --ks /root/debug.keystore \
+            --ks-pass pass:android \
+            --ks-key-alias androiddebugkey \
+            --key-pass pass:android \
+            --out "build/android/${EXPORT_NAME}.apk" \
+            build/android/tic3-aligned.apk
+          "$BUILD_TOOLS_DIR/apksigner" verify --verbose "build/android/${EXPORT_NAME}.apk"
           ls -lh build/android/
 
       - name: Upload APK
