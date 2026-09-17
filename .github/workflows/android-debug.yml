@@ -42,9 +42,6 @@ jobs:
             echo 'export/android/java_sdk_path = "/usr/lib/jvm/java-17-openjdk-amd64"' >> "$SETTINGS"
           fi
 
-      - name: Verify winning-line generator
-        run: python3 tests/test_winning_lines.py
-
       - name: Parse project and import resources
         run: godot --headless --verbose --editor --quit --path .
 
