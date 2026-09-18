@@ -182,7 +182,7 @@ func place_piece(idx: int, player: int, animate := true) -> void:
 	var layer_index := int(idx / (board.size * board.size))
 	piece.set_meta("layer_index", layer_index)
 	piece.position.y = _piece_target_height(layer_index)
-	var level_tag := _make_level_tag(layer_index + 1)
+	var level_tag := _make_level_tag(layer_index)
 	piece.add_child(level_tag)
 	cell.add_child(piece)
 	piece_nodes[idx] = piece
@@ -222,19 +222,35 @@ func _make_o() -> Node3D:
 	mesh_instance.material_override = mat_o
 	return mesh_instance
 
-func _make_level_tag(level_number: int) -> Label3D:
+func _make_level_tag(layer_index: int) -> Label3D:
 	var tag := Label3D.new()
 	tag.name = "LevelTag"
-	tag.text = "L%d" % level_number
-	tag.position = Vector3(0.30, 0.27, -0.30)
-	tag.font_size = 18
-	tag.outline_size = 5
-	tag.pixel_size = 0.0080
-	tag.modulate = Color(0.86, 0.91, 0.98, 0.90)
+	tag.text = "L%d" % (layer_index + 1)
+	tag.position = _level_tag_position(layer_index)
+	tag.font_size = 16
+	tag.outline_size = 4
+	tag.pixel_size = 0.0075
+	tag.modulate = Color(0.86, 0.91, 0.98, 0.88)
 	tag.outline_modulate = Color(0.025, 0.035, 0.055, 0.96)
 	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	tag.no_depth_test = true
 	return tag
+
+func _level_tag_position(layer_index: int) -> Vector3:
+	# Spread neighbouring level captions around the piece instead of using the
+	# same anchor for every plane. This reduces label-vs-piece collisions when
+	# several occupied cells line up through the STACK projection.
+	match layer_index % 5:
+		0:
+			return Vector3(-0.44, 0.27, 0.24)
+		1:
+			return Vector3(0.44, 0.27, 0.24)
+		2:
+			return Vector3(0.0, 0.31, -0.42)
+		3:
+			return Vector3(-0.44, 0.27, -0.24)
+		_:
+			return Vector3(0.44, 0.27, -0.24)
 
 func _piece_target_scale(layer_index: int) -> Vector3:
 	if not stack_mode or board == null or board.size <= 1:
