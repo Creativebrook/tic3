@@ -304,6 +304,7 @@ func _build_hud() -> void:
 	stack_button = _small_button("STACK", _toggle_stack_mode)
 	layer_box.add_child(stack_button)
 	_refresh_stack_button()
+	_refresh_side_panel_mode()
 
 	help_label = Label.new()
 	help_label.anchor_top = 1.0
@@ -360,6 +361,7 @@ func _select_layer(layer: int) -> void:
 	board_view.set_focus_layer(layer)
 	_refresh_layer_buttons()
 	_refresh_stack_button()
+	_refresh_side_panel_mode()
 	_refresh_view_help()
 
 func _toggle_stack_mode() -> void:
@@ -370,6 +372,7 @@ func _toggle_stack_mode() -> void:
 	camera_rig.set_stack_mode(enabled, board_size)
 	_refresh_layer_buttons()
 	_refresh_stack_button()
+	_refresh_side_panel_mode()
 	_refresh_view_help()
 
 func _reset_game_view(animated := true) -> void:
@@ -379,6 +382,7 @@ func _reset_game_view(animated := true) -> void:
 	camera_rig.reset_view(board_size, animated)
 	_refresh_layer_buttons()
 	_refresh_stack_button()
+	_refresh_side_panel_mode()
 	_refresh_view_help()
 	if game_over:
 		if animated:
@@ -393,7 +397,7 @@ func _refresh_view_help() -> void:
 	if game_over:
 		help_label.text = ""
 	elif board_view.is_stack_mode():
-		help_label.text = "STACK VIEW  •  Levels are offset and labelled\nPinch to zoom  •  Tap ALL or a layer to exit"
+		help_label.text = "STACK VIEW  •  Levels are offset and labelled\nPinch to zoom  •  Tap ALL to return"
 	elif board_view.focused_layer >= 0:
 		help_label.text = "LAYER %d ISOLATED  •  Other levels are secondary\nDrag to rotate  •  Pinch to zoom" % (board_view.focused_layer + 1)
 	else:
@@ -416,6 +420,35 @@ func _hide_side_panel() -> void:
 		if is_instance_valid(side_panel):
 			side_panel.visible = false
 	)
+
+func _refresh_side_panel_mode() -> void:
+	if side_panel == null or board_view == null:
+		return
+
+	var compact := board_view.is_stack_mode()
+	for button in layer_buttons:
+		var layer := int(button.get_meta("layer"))
+		# In STACK the numbered layer buttons are intentionally hidden. STACK is
+		# an analysis mode, so only ALL (exit) and STACK (current mode) are needed.
+		button.visible = not compact or layer == -1
+
+	if compact:
+		side_panel.position = Vector2(902, 356)
+		side_panel.size = Vector2(144, 222)
+		layer_box.add_theme_constant_override("separation", 8)
+		if stack_button:
+			stack_button.custom_minimum_size = Vector2(120, 68)
+		for button in layer_buttons:
+			if int(button.get_meta("layer")) == -1:
+				button.custom_minimum_size = Vector2(120, 68)
+	else:
+		side_panel.position = Vector2(868, 430)
+		side_panel.size = Vector2(174, 700)
+		layer_box.add_theme_constant_override("separation", 10)
+		if stack_button:
+			stack_button.custom_minimum_size = Vector2(130, 70)
+		for button in layer_buttons:
+			button.custom_minimum_size = Vector2(126, 70)
 
 func _refresh_stack_button() -> void:
 	if stack_button == null or board_view == null:
