@@ -248,11 +248,13 @@ func _apply_layer_positions(animated := false) -> void:
 
 		if focused_layer >= 0:
 			if z == focused_layer:
-				target.y += 0.34
-				target_scale = Vector3.ONE * 1.06
+				target.y += 0.10
+				target_scale = Vector3.ONE * 1.08
 			else:
-				target_scale = Vector3.ONE * 0.88
-				visible_alpha = 0.22
+				var focus_direction := -1.0 if z < focused_layer else 1.0
+				target.y += focus_direction * 0.50
+				target_scale = Vector3.ONE * 0.84
+				visible_alpha = 0.20
 
 		_set_layer_alpha(layer_roots[z], visible_alpha)
 		_set_layer_interactive(layer_roots[z], interactive)
