@@ -20,6 +20,7 @@ var mat_x: StandardMaterial3D
 var mat_o: StandardMaterial3D
 var mat_cell: ShaderMaterial
 var mat_win: StandardMaterial3D
+var mat_win_cell: StandardMaterial3D
 
 var touch_starts: Dictionary = {}
 var touch_moved: Dictionary = {}
@@ -56,6 +57,14 @@ func _build_materials() -> void:
 	mat_win.emission = Color("#D7F8FF")
 	mat_win.emission_energy_multiplier = 4.0
 	mat_win.roughness = 0.08
+
+	mat_win_cell = StandardMaterial3D.new()
+	mat_win_cell.albedo_color = Color("#BDF7FF")
+	mat_win_cell.emission_enabled = true
+	mat_win_cell.emission = Color("#72E6FF")
+	mat_win_cell.emission_energy_multiplier = 2.8
+	mat_win_cell.metallic = 0.25
+	mat_win_cell.roughness = 0.22
 
 	mat_cell = ShaderMaterial.new()
 	mat_cell.shader = load("res://shaders/grid_glass.gdshader")
@@ -217,11 +226,11 @@ func _make_level_tag(level_number: int) -> Label3D:
 	var tag := Label3D.new()
 	tag.name = "LevelTag"
 	tag.text = "L%d" % level_number
-	tag.position = Vector3(0.34, 0.30, -0.34)
-	tag.font_size = 28
-	tag.outline_size = 8
-	tag.pixel_size = 0.0105
-	tag.modulate = Color(0.90, 0.95, 1.0, 0.96)
+	tag.position = Vector3(0.30, 0.27, -0.30)
+	tag.font_size = 18
+	tag.outline_size = 5
+	tag.pixel_size = 0.0080
+	tag.modulate = Color(0.86, 0.91, 0.98, 0.90)
 	tag.outline_modulate = Color(0.025, 0.035, 0.055, 0.96)
 	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	tag.no_depth_test = true
@@ -259,6 +268,39 @@ func _apply_piece_depth_cues(animated := false) -> void:
 		else:
 			piece.scale = target_scale
 			piece.position.y = target_y
+
+func show_winning_highlight(line: PackedInt32Array) -> void:
+	if line.is_empty():
+		return
+	for idx in line:
+		if idx < 0 or idx >= cell_nodes.size():
+			continue
+		var cell: Node3D = cell_nodes[idx]
+		var marker := _make_win_frame()
+		marker.position.y = 0.085
+		cell.add_child(marker)
+		marker.scale = Vector3.ONE * 0.82
+		var pulse := marker.create_tween().set_loops()
+		pulse.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		pulse.tween_property(marker, "scale", Vector3.ONE * 1.06, 0.62)
+		pulse.tween_property(marker, "scale", Vector3.ONE * 0.90, 0.62)
+
+func _make_win_frame() -> Node3D:
+	var root := Node3D.new()
+	root.name = "WinFrame"
+	for i in range(4):
+		var bar := MeshInstance3D.new()
+		var mesh := BoxMesh.new()
+		if i < 2:
+			mesh.size = Vector3(1.02, 0.025, 0.045)
+			bar.position = Vector3(0, 0, -0.49 if i == 0 else 0.49)
+		else:
+			mesh.size = Vector3(0.045, 0.025, 1.02)
+			bar.position = Vector3(-0.49 if i == 2 else 0.49, 0, 0)
+		bar.mesh = mesh
+		bar.material_override = mat_win_cell
+		root.add_child(bar)
+	return root
 
 func show_winning_line(line: PackedInt32Array) -> void:
 	if line.is_empty():
