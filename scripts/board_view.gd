@@ -240,13 +240,21 @@ func _piece_target_scale(layer_index: int) -> Vector3:
 	if not stack_mode or board == null or board.size <= 1:
 		return Vector3.ONE
 	var depth_t := float(layer_index) / float(board.size - 1)
-	return Vector3.ONE * lerp(0.88, 1.08, depth_t)
+	var min_scale := 0.90
+	var max_scale := 1.08
+	if board.size == 4:
+		min_scale = 0.88
+		max_scale = 1.05
+	elif board.size >= 5:
+		min_scale = 0.86
+		max_scale = 1.02
+	return Vector3.ONE * lerp(min_scale, max_scale, depth_t)
 
 func _piece_target_height(layer_index: int) -> float:
 	if not stack_mode or board == null or board.size <= 1:
 		return 0.18
 	var depth_t := float(layer_index) / float(board.size - 1)
-	return lerp(0.17, 0.27, depth_t)
+	return lerp(0.17, 0.25, depth_t)
 
 func _apply_piece_depth_cues(animated := false) -> void:
 	for idx in piece_nodes.keys():
@@ -259,12 +267,18 @@ func _apply_piece_depth_cues(animated := false) -> void:
 		var tag := piece.get_node_or_null("LevelTag") as Label3D
 		if tag:
 			tag.visible = stack_mode
+			var tag_factor := 1.0
+			if board != null and board.size == 4:
+				tag_factor = 0.90
+			elif board != null and board.size >= 5:
+				tag_factor = 0.80
+			tag.scale = Vector3.ONE * tag_factor
 
 		if animated:
-			var tw := piece.create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+			var tw := piece.create_tween().set_trans(Tween.TRANS_QUINT).set_ease(Tween.EASE_IN_OUT)
 			tw.set_parallel(true)
-			tw.tween_property(piece, "scale", target_scale, 0.30)
-			tw.tween_property(piece, "position:y", target_y, 0.30)
+			tw.tween_property(piece, "scale", target_scale, 0.38)
+			tw.tween_property(piece, "position:y", target_y, 0.38)
 		else:
 			piece.scale = target_scale
 			piece.position.y = target_y
@@ -373,17 +387,30 @@ func _apply_layer_positions(animated := false) -> void:
 		var interactive := focused_layer < 0 or z == focused_layer
 
 		if stack_mode:
-			# B2: use a compact diagonal cascade instead of placing every level on
-			# the exact same footprint. The offset is small enough to read columns,
-			# but large enough to expose level order in a 3/4 camera.
+			# B5 adaptive cascade: enough parallax to read the level order without
+			# making 4³/5³ visually sprawl beyond the portrait viewport.
 			var stack_center := (float(board.size) - 1.0) * 0.5
 			var level_offset := float(z) - stack_center
-			target = Vector3(level_offset * 0.16, level_offset * 0.34, -level_offset * 0.13)
-			target_scale = Vector3.ONE * 0.94
-			# Slight depth gradient helps the planes separate without becoming
-			# opaque. Piece-specific depth cues remain a B3 task.
+			var step_x := 0.18
+			var step_y := 0.38
+			var step_z := 0.15
+			var stack_scale := 0.96
+			if board.size == 4:
+				step_x = 0.15
+				step_y = 0.32
+				step_z = 0.12
+				stack_scale = 0.93
+			elif board.size >= 5:
+				step_x = 0.12
+				step_y = 0.28
+				step_z = 0.10
+				stack_scale = 0.90
+			target = Vector3(level_offset * step_x, level_offset * step_y, -level_offset * step_z)
+			target_scale = Vector3.ONE * stack_scale
 			var depth_t := 0.5 if board.size <= 1 else float(z) / float(board.size - 1)
-			panel_opacity = lerp(0.26, 0.38, depth_t)
+			var opacity_low := 0.26 if board.size <= 3 else 0.22
+			var opacity_high := 0.38 if board.size <= 3 else 0.34
+			panel_opacity = lerp(opacity_low, opacity_high, depth_t)
 			panel_dim = lerp(0.48, 0.72, depth_t)
 			piece_opacity = 1.0
 		elif focused_layer >= 0:
@@ -405,10 +432,10 @@ func _apply_layer_positions(animated := false) -> void:
 		_set_layer_interactive(layer_roots[z], interactive)
 
 		if animated:
-			var tw := layer_roots[z].create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+			var tw := layer_roots[z].create_tween().set_trans(Tween.TRANS_QUINT).set_ease(Tween.EASE_IN_OUT)
 			tw.set_parallel(true)
-			tw.tween_property(layer_roots[z], "position", target, 0.34)
-			tw.tween_property(layer_roots[z], "scale", target_scale, 0.34)
+			tw.tween_property(layer_roots[z], "position", target, 0.44)
+			tw.tween_property(layer_roots[z], "scale", target_scale, 0.44)
 		else:
 			layer_roots[z].position = target
 			layer_roots[z].scale = target_scale
