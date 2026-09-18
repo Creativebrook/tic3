@@ -19,7 +19,6 @@ var layer_gap := 1.55
 var mat_x: StandardMaterial3D
 var mat_o: StandardMaterial3D
 var mat_cell: ShaderMaterial
-var mat_cell_inactive: StandardMaterial3D
 var mat_win: StandardMaterial3D
 
 var touch_starts: Dictionary = {}
@@ -60,14 +59,6 @@ func _build_materials() -> void:
 
 	mat_cell = ShaderMaterial.new()
 	mat_cell.shader = load("res://shaders/grid_glass.gdshader")
-
-	# Inactive layers use a deliberately neutral, unlit material instead of
-	# relying on alpha blending. This gives a stable "disabled" look on Android.
-	mat_cell_inactive = StandardMaterial3D.new()
-	mat_cell_inactive.albedo_color = Color("#343A44")
-	mat_cell_inactive.metallic = 0.0
-	mat_cell_inactive.roughness = 0.92
-	mat_cell_inactive.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 
 func _rebuild() -> void:
 	for child in get_children():
@@ -271,10 +262,18 @@ func _apply_layer_positions(animated := false) -> void:
 	for z in range(layer_roots.size()):
 		var target := Vector3(0, z * separation - center, 0)
 		var target_scale := Vector3.ONE
-		var visible_alpha := 1.0
+		var panel_opacity := 1.0
+		var panel_dim := 1.0
+		var piece_opacity := 1.0
 		var interactive := focused_layer < 0 or z == focused_layer
 
-		if focused_layer >= 0:
+		if stack_mode:
+			# Analytical STACK foundation: panels become genuinely translucent
+			# while X/O pieces stay fully readable through the layers.
+			panel_opacity = 0.34
+			panel_dim = 0.62
+			piece_opacity = 1.0
+		elif focused_layer >= 0:
 			if z == focused_layer:
 				target.y = focus_base_y
 				target_scale = Vector3.ONE * 1.10
@@ -285,9 +284,11 @@ func _apply_layer_positions(animated := false) -> void:
 				# while leaving a larger interaction gap around the active layer.
 				target.y = focus_base_y + direction * (2.32 + float(rank - 1) * 0.20)
 				target_scale = Vector3.ONE * 0.68
-				visible_alpha = 0.08
+				panel_opacity = 0.24
+				panel_dim = 0.34
+				piece_opacity = 0.58
 
-		_set_layer_visual(z, visible_alpha, z == focused_layer or focused_layer < 0)
+		_set_layer_visual(z, panel_opacity, panel_dim, piece_opacity)
 		_set_layer_interactive(layer_roots[z], interactive)
 
 		if animated:
@@ -299,22 +300,25 @@ func _apply_layer_positions(animated := false) -> void:
 			layer_roots[z].position = target
 			layer_roots[z].scale = target_scale
 
-func _set_layer_visual(layer_index: int, alpha: float, active: bool) -> void:
+func _set_layer_visual(layer_index: int, panel_opacity: float, dim_factor: float, piece_opacity: float) -> void:
 	if layer_index < 0 or layer_index >= layer_roots.size():
 		return
 
-	# Swap the cell surface material entirely. This is intentionally color-based
-	# rather than transparency-based because the Android mobile renderer kept the
-	# glass panels visually bright even at very low alpha values.
+	# Each layer owns its ShaderMaterial instance, so alpha/dimming can be changed
+	# independently. The shader uses blend_mix + depth_draw_never: unlike the old
+	# alpha pre-pass, translucent panels no longer write depth and hide layers below.
+	var material := layer_materials[layer_index]
+	material.set_shader_parameter("layer_opacity", panel_opacity)
+	material.set_shader_parameter("layer_dim", dim_factor)
+
 	for cell in layer_roots[layer_index].get_children():
 		if cell is StaticBody3D:
 			var surface := cell.get_node_or_null("Surface") as MeshInstance3D
 			if surface:
-				surface.material_override = layer_materials[layer_index] if active else mat_cell_inactive
-				surface.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if active else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				surface.material_override = material
+				surface.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if panel_opacity >= 0.95 else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
-	# Keep pieces readable across layers, but soften them slightly when inactive.
-	_set_piece_alpha_recursive(layer_roots[layer_index], 1.0 if active else 0.42)
+	_set_piece_alpha_recursive(layer_roots[layer_index], piece_opacity)
 
 func _set_piece_alpha_recursive(node: Node, alpha: float) -> void:
 	# Pieces use StandardMaterial3D, where instance transparency is reliable.
