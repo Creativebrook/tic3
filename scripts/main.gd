@@ -33,6 +33,7 @@ var last_move := -1
 var timer_p1: Label
 var timer_p2: Label
 var turn_label: Label
+var help_label: Label
 var layer_box: VBoxContainer
 var result_panel: PanelContainer
 var side_panel: PanelContainer
@@ -303,17 +304,17 @@ func _build_hud() -> void:
 	layer_box.add_child(stack_button)
 	_refresh_stack_button()
 
-	var help := Label.new()
-	help.text = "Drag to rotate  •  Pinch / wheel to zoom\nTap a layer number to isolate it"
-	help.anchor_top = 1.0
-	help.anchor_bottom = 1.0
-	help.offset_left = 48
-	help.offset_right = 930
-	help.offset_top = -122
-	help.offset_bottom = -42
-	help.add_theme_font_size_override("font_size", 22)
-	help.add_theme_color_override("font_color", MUTED)
-	hud.add_child(help)
+	help_label = Label.new()
+	help_label.anchor_top = 1.0
+	help_label.anchor_bottom = 1.0
+	help_label.offset_left = 48
+	help_label.offset_right = 930
+	help_label.offset_top = -122
+	help_label.offset_bottom = -42
+	help_label.add_theme_font_size_override("font_size", 22)
+	help_label.add_theme_color_override("font_color", MUTED)
+	hud.add_child(help_label)
+	_refresh_view_help()
 
 func _clock_panel(name_text: String, accent: Color) -> PanelContainer:
 	var panel := PanelContainer.new()
@@ -358,6 +359,7 @@ func _select_layer(layer: int) -> void:
 	board_view.set_focus_layer(layer)
 	_refresh_layer_buttons()
 	_refresh_stack_button()
+	_refresh_view_help()
 
 func _toggle_stack_mode() -> void:
 	if board_view == null:
@@ -367,6 +369,7 @@ func _toggle_stack_mode() -> void:
 	camera_rig.set_stack_mode(enabled, board_size)
 	_refresh_layer_buttons()
 	_refresh_stack_button()
+	_refresh_view_help()
 
 func _reset_game_view(animated := true) -> void:
 	if board_view == null:
@@ -375,12 +378,25 @@ func _reset_game_view(animated := true) -> void:
 	camera_rig.reset_view(board_size, animated)
 	_refresh_layer_buttons()
 	_refresh_stack_button()
+	_refresh_view_help()
 	if game_over:
 		if animated:
 			var timer := get_tree().create_timer(0.38)
 			timer.timeout.connect(func(): camera_rig.start_victory_orbit(board_size), CONNECT_ONE_SHOT)
 		else:
 			camera_rig.start_victory_orbit(board_size)
+
+func _refresh_view_help() -> void:
+	if help_label == null or board_view == null:
+		return
+	if game_over:
+		help_label.text = ""
+	elif board_view.is_stack_mode():
+		help_label.text = "STACK VIEW  •  Levels are offset and labelled\nPinch to zoom  •  Tap ALL or a layer to exit"
+	elif board_view.focused_layer >= 0:
+		help_label.text = "LAYER %d ISOLATED  •  Other levels are secondary\nDrag to rotate  •  Pinch to zoom" % (board_view.focused_layer + 1)
+	else:
+		help_label.text = "Drag to rotate  •  Pinch / wheel to zoom\nTap a layer number to isolate it"
 
 func _set_view_controls_locked(locked: bool) -> void:
 	for button in layer_buttons:
@@ -456,6 +472,7 @@ func _finish_game(winner: int, line: PackedInt32Array) -> void:
 	game_over = true
 	ai_busy = false
 	_refresh_hud()
+	_refresh_view_help()
 	_set_view_controls_locked(true)
 	_hide_side_panel()
 	camera_rig.stop_victory_orbit()
@@ -492,7 +509,10 @@ func _show_result(winner: int) -> void:
 	result_panel.offset_top = -155
 	result_panel.offset_bottom = 190
 	_apply_panel_style(result_panel, Color(0.09, 0.12, 0.17, 0.985), 32)
+	result_panel.modulate.a = 0.0
 	hud.add_child(result_panel)
+	var reveal := result_panel.create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	reveal.tween_property(result_panel, "modulate:a", 1.0, 0.24)
 
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 34)
