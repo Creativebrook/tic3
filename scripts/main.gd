@@ -147,6 +147,13 @@ func _show_home() -> void:
 	hint.add_theme_color_override("font_color", MUTED)
 	v.add_child(hint)
 
+	var version_label := Label.new()
+	version_label.text = "v%s" % String(ProjectSettings.get_setting("application/config/version", "dev"))
+	version_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	version_label.add_theme_font_size_override("font_size", 17)
+	version_label.add_theme_color_override("font_color", Color(0.45, 0.50, 0.58, 0.82))
+	v.add_child(version_label)
+
 func _show_setup(selected_mode: String) -> void:
 	mode = selected_mode
 	_clear_ui()
