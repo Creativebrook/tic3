@@ -3,6 +3,8 @@ extends Node3D
 
 signal cell_pressed(index: int)
 
+const TAP_SLOP := 22.0
+
 var board: BoardLogic
 var cell_nodes: Array[Node3D] = []
 var piece_nodes: Dictionary = {}
@@ -16,6 +18,13 @@ var mat_x: StandardMaterial3D
 var mat_o: StandardMaterial3D
 var mat_cell: ShaderMaterial
 var mat_win: StandardMaterial3D
+
+var touch_starts: Dictionary = {}
+var touch_moved: Dictionary = {}
+var multitouch_gesture := false
+var mouse_start := Vector2.ZERO
+var mouse_tracking := false
+var mouse_moved := false
 
 func setup(board_logic: BoardLogic) -> void:
 	board = board_logic
@@ -78,7 +87,6 @@ func _make_cell(idx: int) -> Node3D:
 	var body := StaticBody3D.new()
 	body.name = "Cell_%d" % idx
 	body.set_meta("cell_index", idx)
-	body.input_event.connect(_on_cell_input.bind(idx))
 
 	var mesh_instance := MeshInstance3D.new()
 	var mesh := BoxMesh.new()
@@ -94,11 +102,60 @@ func _make_cell(idx: int) -> Node3D:
 	body.add_child(shape)
 	return body
 
-func _on_cell_input(_camera: Node, event: InputEvent, _pos: Vector3, _normal: Vector3, _shape_idx: int, idx: int) -> void:
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		cell_pressed.emit(idx)
-	elif event is InputEventScreenTouch and event.pressed:
-		cell_pressed.emit(idx)
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch:
+		if event.pressed:
+			if not touch_starts.is_empty():
+				multitouch_gesture = true
+				for key in touch_moved.keys():
+					touch_moved[key] = true
+			touch_starts[event.index] = event.position
+			touch_moved[event.index] = multitouch_gesture
+		else:
+			var should_tap := touch_starts.has(event.index) and not bool(touch_moved.get(event.index, true)) and not multitouch_gesture
+			touch_starts.erase(event.index)
+			touch_moved.erase(event.index)
+			if touch_starts.is_empty():
+				multitouch_gesture = false
+			if should_tap:
+				_emit_tap_at(event.position)
+	elif event is InputEventScreenDrag:
+		if touch_starts.has(event.index):
+			if Vector2(touch_starts[event.index]).distance_to(event.position) > TAP_SLOP:
+				touch_moved[event.index] = true
+		if touch_starts.size() > 1:
+			multitouch_gesture = true
+			for key in touch_moved.keys():
+				touch_moved[key] = true
+	elif not DisplayServer.is_touchscreen_available():
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				mouse_tracking = true
+				mouse_moved = false
+				mouse_start = event.position
+			else:
+				if mouse_tracking and not mouse_moved:
+					_emit_tap_at(event.position)
+				mouse_tracking = false
+		elif event is InputEventMouseMotion and mouse_tracking:
+			if mouse_start.distance_to(event.position) > TAP_SLOP:
+				mouse_moved = true
+
+func _emit_tap_at(screen_pos: Vector2) -> void:
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return
+	var ray_from := camera.project_ray_origin(screen_pos)
+	var ray_to := ray_from + camera.project_ray_normal(screen_pos) * 100.0
+	var query := PhysicsRayQueryParameters3D.create(ray_from, ray_to)
+	query.collide_with_areas = false
+	query.collide_with_bodies = true
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return
+	var collider = hit.get("collider")
+	if collider is StaticBody3D and collider.has_meta("cell_index") and collider.input_ray_pickable:
+		cell_pressed.emit(int(collider.get_meta("cell_index")))
 
 func place_piece(idx: int, player: int, animate := true) -> void:
 	if piece_nodes.has(idx):
@@ -156,12 +213,12 @@ func show_winning_line(line: PackedInt32Array) -> void:
 	line_mesh.material_override = mat_win
 	add_child(line_mesh)
 	line_mesh.global_position = midpoint
-	line_mesh.global_transform = _cylinder_transform(midpoint, a, b, line_mesh.global_transform)
+	line_mesh.global_transform = _cylinder_transform(midpoint, a, b)
 	line_mesh.scale = Vector3(0.05, 0.05, 0.05)
 	var tween := line_mesh.create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tween.tween_property(line_mesh, "scale", Vector3.ONE, 0.36)
 
-func _cylinder_transform(midpoint: Vector3, a: Vector3, b: Vector3, current: Transform3D) -> Transform3D:
+func _cylinder_transform(midpoint: Vector3, a: Vector3, b: Vector3) -> Transform3D:
 	var direction := (b - a).normalized()
 	var q := Quaternion(Vector3.UP, direction)
 	return Transform3D(Basis(q), midpoint)
@@ -172,7 +229,7 @@ func global_position_for_cell(idx: int) -> Vector3:
 
 func set_focus_layer(layer: int) -> void:
 	focused_layer = layer
-	_apply_layer_positions()
+	_apply_layer_positions(true)
 
 func toggle_exploded() -> void:
 	exploded = not exploded
@@ -188,12 +245,18 @@ func _apply_layer_positions(animated := false) -> void:
 		var target_scale := Vector3.ONE
 		var visible_alpha := 1.0
 		var interactive := focused_layer < 0 or z == focused_layer
-		if focused_layer >= 0 and z != focused_layer:
-			target.x += (z - focused_layer) * 0.12
-			target_scale = Vector3.ONE * 0.94
-			visible_alpha = 0.25
+
+		if focused_layer >= 0:
+			if z == focused_layer:
+				target.y += 0.34
+				target_scale = Vector3.ONE * 1.06
+			else:
+				target_scale = Vector3.ONE * 0.88
+				visible_alpha = 0.22
+
 		_set_layer_alpha(layer_roots[z], visible_alpha)
 		_set_layer_interactive(layer_roots[z], interactive)
+
 		if animated:
 			var tw := layer_roots[z].create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 			tw.set_parallel(true)
@@ -204,12 +267,13 @@ func _apply_layer_positions(animated := false) -> void:
 			layer_roots[z].scale = target_scale
 
 func _set_layer_alpha(layer: Node3D, alpha: float) -> void:
-	for child in layer.get_children():
-		if child is VisualInstance3D:
-			child.transparency = 1.0 - alpha
-		for grand in child.get_children():
-			if grand is VisualInstance3D:
-				grand.transparency = 1.0 - alpha
+	_set_visual_alpha_recursive(layer, alpha)
+
+func _set_visual_alpha_recursive(node: Node, alpha: float) -> void:
+	if node is VisualInstance3D:
+		node.transparency = 1.0 - alpha
+	for child in node.get_children():
+		_set_visual_alpha_recursive(child, alpha)
 
 func _set_layer_interactive(layer: Node3D, enabled: bool) -> void:
 	for child in layer.get_children():
