@@ -199,6 +199,8 @@ func _refresh_setup(container: VBoxContainer) -> void:
 func _start_game() -> void:
 	_clear_ui()
 	_clear_board()
+	camera_rig.stop_victory_orbit()
+	camera_rig.set_interaction_enabled(true)
 	board = BoardLogic.new(board_size)
 	ai = AIEngine.new(board)
 	current_player = 1
@@ -220,7 +222,8 @@ func _start_game() -> void:
 
 func _clear_board() -> void:
 	if is_instance_valid(camera_rig):
-		camera_rig.set_auto_rotate(false)
+		camera_rig.stop_victory_orbit()
+		camera_rig.set_interaction_enabled(true)
 	if is_instance_valid(board_view):
 		board_view.queue_free()
 	board_view = null
@@ -371,6 +374,20 @@ func _reset_game_view(animated := true) -> void:
 	camera_rig.reset_view(board_size, animated)
 	_refresh_layer_buttons()
 	_refresh_stack_button()
+	if game_over:
+		if animated:
+			var timer := get_tree().create_timer(0.38)
+			timer.timeout.connect(func(): camera_rig.start_victory_orbit(board_size), CONNECT_ONE_SHOT)
+		else:
+			camera_rig.start_victory_orbit(board_size)
+
+func _set_view_controls_locked(locked: bool) -> void:
+	for button in layer_buttons:
+		button.disabled = locked
+		button.modulate = Color(1, 1, 1, 0.45) if locked else Color.WHITE
+	if stack_button:
+		stack_button.disabled = locked
+		stack_button.modulate = Color(1, 1, 1, 0.45) if locked else Color.WHITE
 
 func _refresh_stack_button() -> void:
 	if stack_button == null or board_view == null:
@@ -427,14 +444,28 @@ func _take_ai_turn() -> void:
 func _finish_game(winner: int, line: PackedInt32Array) -> void:
 	game_over = true
 	ai_busy = false
-	# Always normalize the board before drawing the win line. This prevents a
-	# line computed in a focused/STACK layout from ending up visually off-axis.
-	_reset_game_view(false)
-	if winner != 0:
-		board_view.show_winning_line(line)
-		Input.vibrate_handheld(80)
-	_show_result(winner)
-	camera_rig.set_auto_rotate(true)
+	_set_view_controls_locked(true)
+	camera_rig.stop_victory_orbit()
+	camera_rig.set_interaction_enabled(false)
+
+	# Smoothly normalize both the board and camera first. The winning line is
+	# created only after the transition finishes, so its world-space endpoints
+	# are guaranteed to match the canonical exploded layout.
+	board_view.reset_view_state(true)
+	camera_rig.reset_view(board_size, true)
+	_refresh_layer_buttons()
+	_refresh_stack_button()
+
+	var transition_timer := get_tree().create_timer(0.42)
+	transition_timer.timeout.connect(func():
+		if not game_over or board_view == null:
+			return
+		if winner != 0:
+			board_view.show_winning_line(line)
+			Input.vibrate_handheld(80)
+		_show_result(winner)
+		camera_rig.start_victory_orbit(board_size)
+	, CONNECT_ONE_SHOT)
 
 func _show_result(winner: int) -> void:
 	result_panel = PanelContainer.new()
