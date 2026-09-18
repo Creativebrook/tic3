@@ -49,7 +49,7 @@ func reset_view(board_size := 3, animated := true) -> void:
 	stack_mode = false
 	_apply_normal_limits(board_size)
 	if animated:
-		_animate_view(deg_to_rad(-36.0), deg_to_rad(-28.0), fit_distance, 0.34)
+		_animate_view(deg_to_rad(-36.0), deg_to_rad(-28.0), fit_distance, 0.42)
 	else:
 		if is_instance_valid(view_tween):
 			view_tween.kill()
@@ -62,7 +62,9 @@ func set_stack_mode(enabled: bool, board_size := 3) -> void:
 	current_board_size = board_size
 	if enabled == stack_mode:
 		if enabled:
-			reset_view(board_size)
+			_apply_stack_limits(board_size)
+			var same_target := _stack_view_target(board_size)
+			_animate_view(same_target.x, same_target.y, fit_distance, 0.36)
 		return
 
 	auto_rotating = false
@@ -76,12 +78,13 @@ func set_stack_mode(enabled: bool, board_size := 3) -> void:
 		saved_distance = distance
 		stack_mode = true
 		_apply_stack_limits(board_size)
-		_animate_view(deg_to_rad(-42.0), deg_to_rad(-55.0), fit_distance, 0.42)
+		var target := _stack_view_target(board_size)
+		_animate_view(target.x, target.y, fit_distance, 0.48)
 	else:
 		stack_mode = false
 		_apply_normal_limits(board_size)
 		var restore_distance := clamp(saved_distance, min_distance, max_distance)
-		_animate_view(saved_yaw, saved_pitch, restore_distance, 0.38)
+		_animate_view(saved_yaw, saved_pitch, restore_distance, 0.44)
 
 func is_stack_mode() -> bool:
 	return stack_mode
@@ -135,26 +138,35 @@ func _apply_normal_limits(board_size: int) -> void:
 	max_distance = fit_distance * 1.9
 
 func _apply_stack_limits(board_size: int) -> void:
-	# B2 analytical framing: slightly farther away than B1 so the complete
-	# cascaded stack remains readable on narrow portrait displays.
+	# B5: adaptive framing keeps 3³ intimate while preventing 5³ from crowding.
 	match board_size:
 		3:
-			fit_distance = 13.6
+			fit_distance = 13.4
 		4:
-			fit_distance = 17.2
+			fit_distance = 17.5
 		5:
-			fit_distance = 21.0
+			fit_distance = 21.8
 		_:
-			fit_distance = 13.6
-	min_distance = fit_distance * 0.84
-	max_distance = fit_distance * 1.24
+			fit_distance = 13.4
+	min_distance = fit_distance * 0.86
+	max_distance = fit_distance * 1.20
+
+func _stack_view_target(board_size: int) -> Vector2:
+	match board_size:
+		3:
+			return Vector2(deg_to_rad(-42.0), deg_to_rad(-55.0))
+		4:
+			return Vector2(deg_to_rad(-43.0), deg_to_rad(-56.0))
+		5:
+			return Vector2(deg_to_rad(-44.0), deg_to_rad(-57.0))
+	return Vector2(deg_to_rad(-42.0), deg_to_rad(-55.0))
 
 func _animate_view(target_yaw: float, target_pitch: float, target_distance: float, duration: float) -> void:
 	if is_instance_valid(view_tween):
 		view_tween.kill()
 	var start := Vector3(yaw, pitch, distance)
 	var target := Vector3(target_yaw, target_pitch, target_distance)
-	view_tween = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+	view_tween = create_tween().set_trans(Tween.TRANS_QUINT).set_ease(Tween.EASE_IN_OUT)
 	view_tween.tween_method(_set_view_state, start, target, duration)
 
 func _set_view_state(state: Vector3) -> void:
@@ -182,11 +194,13 @@ func _unhandled_input(event: InputEvent) -> void:
 				_return_to_victory_orbit()
 		elif event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
 			auto_rotating = false
-			distance = max(min_distance, distance - fit_distance * 0.07)
+			var wheel_step := fit_distance * (0.045 if stack_mode else 0.07)
+			distance = max(min_distance, distance - wheel_step)
 			_update_camera()
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
 			auto_rotating = false
-			distance = min(max_distance, distance + fit_distance * 0.07)
+			var wheel_step := fit_distance * (0.045 if stack_mode else 0.07)
+			distance = min(max_distance, distance + wheel_step)
 			_update_camera()
 	elif event is InputEventMouseMotion and dragging and not stack_mode:
 		auto_rotating = false
@@ -210,7 +224,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			var ids := touches.keys()
 			var d := Vector2(touches[ids[0]]).distance_to(Vector2(touches[ids[1]]))
 			if pinch_distance > 0.0:
-				distance = clamp(distance - (d - pinch_distance) * fit_distance * 0.00125, min_distance, max_distance)
+				var pinch_sensitivity := 0.00095 if stack_mode else 0.00125
+				distance = clamp(distance - (d - pinch_distance) * fit_distance * pinch_sensitivity, min_distance, max_distance)
 				_update_camera()
 			pinch_distance = d
 		elif not stack_mode:
