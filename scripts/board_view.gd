@@ -9,6 +9,7 @@ var board: BoardLogic
 var cell_nodes: Array[Node3D] = []
 var piece_nodes: Dictionary = {}
 var layer_roots: Array[Node3D] = []
+var layer_materials: Array[ShaderMaterial] = []
 var focused_layer := -1
 var exploded := true
 var spacing := 1.22
@@ -64,6 +65,7 @@ func _rebuild() -> void:
 	cell_nodes.clear()
 	piece_nodes.clear()
 	layer_roots.clear()
+	layer_materials.clear()
 	if board == null:
 		return
 	cell_nodes.resize(board.cells.size())
@@ -74,16 +76,19 @@ func _rebuild() -> void:
 		layer.name = "Layer_%d" % (z + 1)
 		add_child(layer)
 		layer_roots.append(layer)
+		var layer_material := mat_cell.duplicate() as ShaderMaterial
+		layer_material.set_shader_parameter("layer_opacity", 1.0)
+		layer_materials.append(layer_material)
 		for y in range(board.size):
 			for x in range(board.size):
 				var idx := board.index(x, y, z)
-				var cell := _make_cell(idx)
+				var cell := _make_cell(idx, layer_material)
 				cell.position = Vector3(x * spacing - center_offset, 0.0, y * spacing - center_offset)
 				layer.add_child(cell)
 				cell_nodes[idx] = cell
 	_apply_layer_positions()
 
-func _make_cell(idx: int) -> Node3D:
+func _make_cell(idx: int, cell_material: ShaderMaterial) -> Node3D:
 	var body := StaticBody3D.new()
 	body.name = "Cell_%d" % idx
 	body.set_meta("cell_index", idx)
@@ -92,7 +97,7 @@ func _make_cell(idx: int) -> Node3D:
 	var mesh := BoxMesh.new()
 	mesh.size = Vector3(1.03, 0.055, 1.03)
 	mesh_instance.mesh = mesh
-	mesh_instance.material_override = mat_cell
+	mesh_instance.material_override = cell_material
 	body.add_child(mesh_instance)
 
 	var shape := CollisionShape3D.new()
@@ -240,6 +245,10 @@ func _apply_layer_positions(animated := false) -> void:
 		return
 	var separation := layer_gap if exploded else 0.42
 	var center := (board.size - 1) * separation * 0.5
+	var focus_base_y := 0.0
+	if focused_layer >= 0:
+		focus_base_y = focused_layer * separation - center
+
 	for z in range(layer_roots.size()):
 		var target := Vector3(0, z * separation - center, 0)
 		var target_scale := Vector3.ONE
@@ -248,38 +257,48 @@ func _apply_layer_positions(animated := false) -> void:
 
 		if focused_layer >= 0:
 			if z == focused_layer:
-				target.y += 0.12
+				target.y = focus_base_y
 				target_scale = Vector3.ONE * 1.10
 			else:
-				var focus_direction := -1.0 if z < focused_layer else 1.0
-				target.y += focus_direction * 0.75
-				target_scale = Vector3.ONE * 0.72
-				visible_alpha = 0.14
+				var direction := -1.0 if z < focused_layer else 1.0
+				var rank := abs(z - focused_layer)
+				# Keep inactive layers grouped like a compact stack on each side
+				# while leaving a clear interaction gap around the active layer.
+				target.y = focus_base_y + direction * (1.72 + float(rank - 1) * 0.30)
+				target_scale = Vector3.ONE * 0.68
+				visible_alpha = 0.20
 
-		_set_layer_alpha(layer_roots[z], visible_alpha)
+		_set_layer_alpha(z, visible_alpha)
 		_set_layer_interactive(layer_roots[z], interactive)
 
 		if animated:
 			var tw := layer_roots[z].create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 			tw.set_parallel(true)
-			tw.tween_property(layer_roots[z], "position", target, 0.32)
-			tw.tween_property(layer_roots[z], "scale", target_scale, 0.32)
+			tw.tween_property(layer_roots[z], "position", target, 0.34)
+			tw.tween_property(layer_roots[z], "scale", target_scale, 0.34)
 		else:
 			layer_roots[z].position = target
 			layer_roots[z].scale = target_scale
 
-func _set_layer_alpha(layer: Node3D, alpha: float) -> void:
-	_set_visual_alpha_recursive(layer, alpha)
+func _set_layer_alpha(layer_index: int, alpha: float) -> void:
+	# The board cells use a custom shader. GeometryInstance3D.transparency does
+	# not reliably modulate custom ShaderMaterial output on the Android mobile
+	# renderer, so opacity is driven explicitly inside the shader per layer.
+	if layer_index >= 0 and layer_index < layer_materials.size():
+		layer_materials[layer_index].set_shader_parameter("layer_opacity", alpha)
+	_set_piece_alpha_recursive(layer_roots[layer_index], alpha)
 
-func _set_visual_alpha_recursive(node: Node, alpha: float) -> void:
-	# transparency belongs to GeometryInstance3D (MeshInstance3D inherits it).
-	# Using VisualInstance3D here left the inactive layers visually unchanged.
+func _set_piece_alpha_recursive(node: Node, alpha: float) -> void:
+	# Pieces use StandardMaterial3D, where instance transparency is reliable.
+	# Cell meshes are excluded because their opacity is controlled by the shader.
 	if node is GeometryInstance3D:
 		var geometry := node as GeometryInstance3D
-		geometry.transparency = 1.0 - alpha
+		var material = geometry.material_override
+		if not (material is ShaderMaterial):
+			geometry.transparency = 1.0 - alpha
 		geometry.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if alpha < 0.5 else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	for child in node.get_children():
-		_set_visual_alpha_recursive(child, alpha)
+		_set_piece_alpha_recursive(child, alpha)
 
 func _set_layer_interactive(layer: Node3D, enabled: bool) -> void:
 	for child in layer.get_children():
