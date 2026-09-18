@@ -10,7 +10,6 @@ var cell_nodes: Array[Node3D] = []
 var piece_nodes: Dictionary = {}
 var layer_roots: Array[Node3D] = []
 var layer_materials: Array[ShaderMaterial] = []
-var piece_material_cache: Dictionary = {}
 var focused_layer := -1
 var exploded := true
 var stack_mode := false
@@ -77,7 +76,6 @@ func _rebuild() -> void:
 	piece_nodes.clear()
 	layer_roots.clear()
 	layer_materials.clear()
-	piece_material_cache.clear()
 	if board == null:
 		return
 	cell_nodes.resize(board.cells.size())
@@ -183,9 +181,8 @@ func place_piece(idx: int, player: int, animate := true) -> void:
 	var piece := _make_x() if player == 1 else _make_o()
 	var layer_index := int(idx / (board.size * board.size))
 	piece.set_meta("layer_index", layer_index)
-	piece.set_meta("player", player)
 	piece.position.y = _piece_target_height(layer_index)
-	var level_tag := _make_level_tag(layer_index, idx)
+	var level_tag := _make_level_tag(layer_index)
 	piece.add_child(level_tag)
 	cell.add_child(piece)
 	piece_nodes[idx] = piece
@@ -225,44 +222,35 @@ func _make_o() -> Node3D:
 	mesh_instance.material_override = mat_o
 	return mesh_instance
 
-func _make_level_tag(layer_index: int, idx: int) -> Label3D:
+func _make_level_tag(layer_index: int) -> Label3D:
 	var tag := Label3D.new()
 	tag.name = "LevelTag"
 	tag.text = "L%d" % (layer_index + 1)
-	tag.position = _level_tag_position(layer_index, idx)
-	tag.font_size = 14
-	tag.outline_size = 3
-	tag.pixel_size = 0.0068
-	tag.modulate = Color(0.86, 0.91, 0.98, 0.84)
+	tag.position = _level_tag_position(layer_index)
+	tag.font_size = 16
+	tag.outline_size = 4
+	tag.pixel_size = 0.0075
+	tag.modulate = Color(0.86, 0.91, 0.98, 0.88)
 	tag.outline_modulate = Color(0.025, 0.035, 0.055, 0.96)
 	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	tag.no_depth_test = true
 	return tag
 
-func _level_tag_position(layer_index: int, idx: int) -> Vector3:
-	# Push captions outward from the board centre. Aligned pieces therefore put
-	# their labels on the outer side of the cluster instead of over another mark.
-	if board == null:
-		return Vector3(0.0, 0.28, -0.44)
-
-	var cells_per_layer := board.size * board.size
-	var local_idx := idx % cells_per_layer
-	var cell_x := local_idx % board.size
-	var cell_y := int(local_idx / board.size)
-	var centre := (float(board.size) - 1.0) * 0.5
-	var outward := Vector2(float(cell_x) - centre, float(cell_y) - centre)
-
-	if outward.length() < 0.20:
-		var fallback_angle := float(layer_index % max(board.size, 1)) * TAU / float(max(board.size, 1))
-		outward = Vector2(cos(fallback_angle), sin(fallback_angle))
-	else:
-		outward = outward.normalized()
-
-	var tangent := Vector2(-outward.y, outward.x)
-	var centred_layer := float(layer_index) - (float(board.size) - 1.0) * 0.5
-	var tangent_nudge := clamp(centred_layer * 0.055, -0.14, 0.14)
-	var offset := outward * 0.46 + tangent * tangent_nudge
-	return Vector3(offset.x, 0.27, offset.y)
+func _level_tag_position(layer_index: int) -> Vector3:
+	# Spread neighbouring level captions around the piece instead of using the
+	# same anchor for every plane. This reduces label-vs-piece collisions when
+	# several occupied cells line up through the STACK projection.
+	match layer_index % 5:
+		0:
+			return Vector3(-0.44, 0.27, 0.24)
+		1:
+			return Vector3(0.44, 0.27, 0.24)
+		2:
+			return Vector3(0.0, 0.31, -0.42)
+		3:
+			return Vector3(-0.44, 0.27, -0.24)
+		_:
+			return Vector3(0.44, 0.27, -0.24)
 
 func _piece_target_scale(layer_index: int) -> Vector3:
 	if not stack_mode or board == null or board.size <= 1:
@@ -290,37 +278,17 @@ func _apply_piece_depth_cues(animated := false) -> void:
 		if not is_instance_valid(piece):
 			continue
 		var layer_index := int(piece.get_meta("layer_index", 0))
-		var player := int(piece.get_meta("player", 1))
 		var target_scale := _piece_target_scale(layer_index)
 		var target_y := _piece_target_height(layer_index)
-		var depth_t := 1.0
-		if board != null and board.size > 1:
-			depth_t = float(layer_index) / float(board.size - 1)
-
 		var tag := piece.get_node_or_null("LevelTag") as Label3D
 		if tag:
 			tag.visible = stack_mode
 			var tag_factor := 1.0
 			if board != null and board.size == 4:
-				tag_factor = 0.88
+				tag_factor = 0.90
 			elif board != null and board.size >= 5:
-				tag_factor = 0.76
+				tag_factor = 0.80
 			tag.scale = Vector3.ONE * tag_factor
-			if stack_mode:
-				tag.modulate.a = lerp(0.58, 0.92, depth_t)
-
-		if stack_mode:
-			# Lower levels are intentionally softer/dimmer; upper levels retain the
-			# original luminous colour. This gives depth without changing X/O identity.
-			var min_alpha := 0.56
-			if board != null and board.size == 4:
-				min_alpha = 0.48
-			elif board != null and board.size >= 5:
-				min_alpha = 0.40
-			var piece_alpha := lerp(min_alpha, 1.0, depth_t)
-			_apply_piece_stack_material(piece, player, layer_index, piece_alpha)
-		else:
-			_restore_piece_material(piece, player)
 
 		if animated:
 			var tw := piece.create_tween().set_trans(Tween.TRANS_QUINT).set_ease(Tween.EASE_IN_OUT)
@@ -330,44 +298,6 @@ func _apply_piece_depth_cues(animated := false) -> void:
 		else:
 			piece.scale = target_scale
 			piece.position.y = target_y
-
-func _stack_piece_material(player: int, layer_index: int) -> StandardMaterial3D:
-	var key := "%d_%d" % [player, layer_index]
-	if piece_material_cache.has(key):
-		return piece_material_cache[key]
-
-	var base := mat_x if player == 1 else mat_o
-	var material := base.duplicate() as StandardMaterial3D
-	var depth_t := 1.0
-	if board != null and board.size > 1:
-		depth_t = float(layer_index) / float(board.size - 1)
-
-	var muted := Color("#286878") if player == 1 else Color("#8A5A32")
-	material.albedo_color = muted.lerp(base.albedo_color, lerp(0.32, 1.0, depth_t))
-	material.emission = muted.lerp(base.emission, lerp(0.24, 1.0, depth_t))
-	material.emission_energy_multiplier = lerp(0.42, base.emission_energy_multiplier, depth_t)
-	material.roughness = lerp(0.34, base.roughness, depth_t)
-	piece_material_cache[key] = material
-	return material
-
-func _apply_piece_stack_material(piece: Node3D, player: int, layer_index: int, alpha: float) -> void:
-	var material := _stack_piece_material(player, layer_index)
-	_set_piece_material_recursive(piece, material, alpha)
-
-func _restore_piece_material(piece: Node3D, player: int) -> void:
-	var material := mat_x if player == 1 else mat_o
-	_set_piece_material_recursive(piece, material, -1.0)
-
-func _set_piece_material_recursive(node: Node, material: StandardMaterial3D, alpha: float) -> void:
-	if node is MeshInstance3D:
-		var mesh_instance := node as MeshInstance3D
-		mesh_instance.material_override = material
-		if alpha >= 0.0:
-			mesh_instance.transparency = 1.0 - alpha
-	for child in node.get_children():
-		if child is Label3D:
-			continue
-		_set_piece_material_recursive(child, material, alpha)
 
 func show_winning_highlight(line: PackedInt32Array) -> void:
 	if line.is_empty():
