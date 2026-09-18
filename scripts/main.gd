@@ -35,6 +35,7 @@ var timer_p2: Label
 var turn_label: Label
 var layer_box: VBoxContainer
 var result_panel: PanelContainer
+var layer_buttons: Array[Button] = []
 
 func _ready() -> void:
 	_build_world()
@@ -121,14 +122,14 @@ func _show_home() -> void:
 	var logo := Label.new()
 	logo.text = "TIC³"
 	logo.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	logo.add_theme_font_size_override("font_size", 84)
+	logo.add_theme_font_size_override("font_size", 92)
 	logo.add_theme_color_override("font_color", TEXT)
 	v.add_child(logo)
 
 	var subtitle := Label.new()
 	subtitle.text = "THINK IN THREE DIMENSIONS"
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle.add_theme_font_size_override("font_size", 19)
+	subtitle.add_theme_font_size_override("font_size", 23)
 	subtitle.add_theme_color_override("font_color", MUTED)
 	v.add_child(subtitle)
 
@@ -140,7 +141,7 @@ func _show_home() -> void:
 	var hint := Label.new()
 	hint.text = "3×3×3  •  4×4×4  •  5×5×5"
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hint.add_theme_font_size_override("font_size", 18)
+	hint.add_theme_font_size_override("font_size", 22)
 	hint.add_theme_color_override("font_color", MUTED)
 	v.add_child(hint)
 
@@ -202,11 +203,14 @@ func _start_game() -> void:
 	board_view.cell_pressed.connect(_on_cell_pressed)
 	world.add_child(board_view)
 	board_view.setup(board)
+	camera_rig.set_auto_rotate(false)
 	camera_rig.reset_view(board_size)
 	_build_hud()
 	_refresh_hud()
 
 func _clear_board() -> void:
+	if is_instance_valid(camera_rig):
+		camera_rig.set_auto_rotate(false)
 	if is_instance_valid(board_view):
 		board_view.queue_free()
 	board_view = null
@@ -228,7 +232,7 @@ func _build_hud() -> void:
 	top.add_child(home_btn)
 	var mode_label := Label.new()
 	mode_label.text = "%d×%d×%d  •  %s" % [board_size, board_size, board_size, difficulty if mode == "CPU" else "LOCAL"]
-	mode_label.add_theme_font_size_override("font_size", 24)
+	mode_label.add_theme_font_size_override("font_size", 29)
 	mode_label.add_theme_color_override("font_color", TEXT)
 	mode_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mode_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -252,13 +256,13 @@ func _build_hud() -> void:
 	turn_label.position = Vector2(34, 284)
 	turn_label.size = Vector2(1012, 52)
 	turn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	turn_label.add_theme_font_size_override("font_size", 24)
+	turn_label.add_theme_font_size_override("font_size", 29)
 	turn_label.add_theme_color_override("font_color", MUTED)
 	hud.add_child(turn_label)
 
 	var right_panel := PanelContainer.new()
-	right_panel.position = Vector2(892, 430)
-	right_panel.size = Vector2(150, 700)
+	right_panel.position = Vector2(868, 430)
+	right_panel.size = Vector2(174, 700)
 	_apply_panel_style(right_panel, Color(0.055, 0.075, 0.105, 0.90), 24)
 	hud.add_child(right_panel)
 	var margin := MarginContainer.new()
@@ -268,21 +272,30 @@ func _build_hud() -> void:
 	margin.add_theme_constant_override("margin_bottom", 18)
 	right_panel.add_child(margin)
 	layer_box = VBoxContainer.new()
+	layer_buttons.clear()
 	layer_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	layer_box.add_theme_constant_override("separation", 10)
 	margin.add_child(layer_box)
 	var all_btn := _layer_button("ALL", -1)
 	layer_box.add_child(all_btn)
+	layer_buttons.append(all_btn)
 	for z in range(board_size - 1, -1, -1):
-		layer_box.add_child(_layer_button(str(z + 1), z))
+		var layer_btn := _layer_button(str(z + 1), z)
+		layer_box.add_child(layer_btn)
+		layer_buttons.append(layer_btn)
+	_refresh_layer_buttons()
 	layer_box.add_child(_spacer(16))
 	layer_box.add_child(_small_button("STACK", func(): board_view.toggle_exploded()))
 
 	var help := Label.new()
 	help.text = "Drag to rotate  •  Pinch / wheel to zoom\nTap a layer number to isolate it"
-	help.position = Vector2(48, 1745)
-	help.size = Vector2(850, 80)
-	help.add_theme_font_size_override("font_size", 18)
+	help.anchor_top = 1.0
+	help.anchor_bottom = 1.0
+	help.offset_left = 48
+	help.offset_right = 930
+	help.offset_top = -122
+	help.offset_bottom = -42
+	help.add_theme_font_size_override("font_size", 22)
 	help.add_theme_color_override("font_color", MUTED)
 	hud.add_child(help)
 
@@ -303,21 +316,37 @@ func _clock_panel(name_text: String, accent: Color) -> PanelContainer:
 	margin.add_child(v)
 	var who := Label.new()
 	who.text = name_text
-	who.add_theme_font_size_override("font_size", 16)
+	who.add_theme_font_size_override("font_size", 20)
 	who.add_theme_color_override("font_color", accent)
 	v.add_child(who)
 	var time := Label.new()
 	time.name = "Time"
 	time.text = "00:00.00"
-	time.add_theme_font_size_override("font_size", 31)
+	time.add_theme_font_size_override("font_size", 38)
 	time.add_theme_color_override("font_color", TEXT)
 	v.add_child(time)
 	return panel
 
 func _layer_button(text: String, layer: int) -> Button:
-	var b := _small_button(text, func(): board_view.set_focus_layer(layer))
-	b.custom_minimum_size = Vector2(108, 64)
+	var b := _small_button(text, func(): _select_layer(layer))
+	b.custom_minimum_size = Vector2(126, 70)
+	b.set_meta("layer", layer)
 	return b
+
+func _select_layer(layer: int) -> void:
+	if board_view == null:
+		return
+	board_view.set_focus_layer(layer)
+	_refresh_layer_buttons()
+
+func _refresh_layer_buttons() -> void:
+	if board_view == null:
+		return
+	for b in layer_buttons:
+		var layer := int(b.get_meta("layer"))
+		var active := layer == board_view.focused_layer
+		b.add_theme_font_size_override("font_size", 23)
+		_style_button(b, Color(0.10, 0.30, 0.36, 0.98) if active else Color(0.07, 0.09, 0.13, 0.93), CYAN if active else TEXT, 18)
 
 func _on_cell_pressed(idx: int) -> void:
 	if game_over or ai_busy or board == null:
@@ -363,11 +392,18 @@ func _finish_game(winner: int, line: PackedInt32Array) -> void:
 		board_view.show_winning_line(line)
 		Input.vibrate_handheld(80)
 	_show_result(winner)
+	camera_rig.set_auto_rotate(true)
 
 func _show_result(winner: int) -> void:
 	result_panel = PanelContainer.new()
-	result_panel.position = Vector2(110, 1320)
-	result_panel.size = Vector2(760, 330)
+	result_panel.anchor_left = 0.5
+	result_panel.anchor_right = 0.5
+	result_panel.anchor_top = 0.70
+	result_panel.anchor_bottom = 0.70
+	result_panel.offset_left = -420
+	result_panel.offset_right = 420
+	result_panel.offset_top = -165
+	result_panel.offset_bottom = 205
 	_apply_panel_style(result_panel, Color(0.04, 0.055, 0.08, 0.97), 32)
 	hud.add_child(result_panel)
 	var margin := MarginContainer.new()
@@ -391,7 +427,7 @@ func _show_result(winner: int) -> void:
 		title.text = "CPU WINS"
 	else:
 		title.text = "PLAYER %d WINS" % winner
-	title.add_theme_font_size_override("font_size", 44)
+	title.add_theme_font_size_override("font_size", 52)
 	title.add_theme_color_override("font_color", GREEN if winner == 1 else TEXT)
 	v.add_child(title)
 	var meta := Label.new()
@@ -399,7 +435,7 @@ func _show_result(winner: int) -> void:
 		meta.text = "%s%s  •  %d moves" % [_format_time(player_times[1]), extra, human_moves]
 	else:
 		meta.text = "X %s  •  O %s" % [_format_time(player_times[1]), _format_time(player_times[2])]
-	meta.add_theme_font_size_override("font_size", 22)
+	meta.add_theme_font_size_override("font_size", 27)
 	meta.add_theme_color_override("font_color", MUTED)
 	v.add_child(meta)
 	var buttons := HBoxContainer.new()
@@ -448,13 +484,13 @@ func _show_highscores() -> void:
 				var e = entries[i]
 				var row := Label.new()
 				row.text = "#%d     %s     %d moves     %s" % [i + 1, _format_time(float(e["time"])), int(e["moves"]), String(e["date"])]
-				row.add_theme_font_size_override("font_size", 22)
+				row.add_theme_font_size_override("font_size", 27)
 				row.add_theme_color_override("font_color", TEXT if i == 0 else MUTED)
 				v.add_child(row)
 	if v.get_child_count() <= 2:
 		var empty := Label.new()
 		empty.text = "No records yet. Beat the computer to set the first one."
-		empty.add_theme_font_size_override("font_size", 22)
+		empty.add_theme_font_size_override("font_size", 27)
 		empty.add_theme_color_override("font_color", MUTED)
 		v.add_child(empty)
 
@@ -468,8 +504,8 @@ func _format_time(seconds: float) -> String:
 func _big_button(text: String, callback: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(760, 92)
-	b.add_theme_font_size_override("font_size", 25)
+	b.custom_minimum_size = Vector2(760, 98)
+	b.add_theme_font_size_override("font_size", 31)
 	b.pressed.connect(callback)
 	_style_button(b, PANEL_2, TEXT, 24)
 	return b
@@ -480,8 +516,8 @@ func _choice_button(text: String, callback: Callable) -> Button:
 func _accent_button(text: String, callback: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(320, 82)
-	b.add_theme_font_size_override("font_size", 24)
+	b.custom_minimum_size = Vector2(320, 86)
+	b.add_theme_font_size_override("font_size", 29)
 	b.pressed.connect(callback)
 	_style_button(b, CYAN, Color("#031019"), 22)
 	return b
@@ -489,8 +525,8 @@ func _accent_button(text: String, callback: Callable) -> Button:
 func _ghost_button(text: String, callback: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(280, 70)
-	b.add_theme_font_size_override("font_size", 21)
+	b.custom_minimum_size = Vector2(280, 74)
+	b.add_theme_font_size_override("font_size", 27)
 	b.pressed.connect(callback)
 	_style_button(b, Color(0.08, 0.10, 0.14, 0.70), TEXT, 20)
 	return b
@@ -498,8 +534,8 @@ func _ghost_button(text: String, callback: Callable) -> Button:
 func _small_button(text: String, callback: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(130, 66)
-	b.add_theme_font_size_override("font_size", 17)
+	b.custom_minimum_size = Vector2(130, 70)
+	b.add_theme_font_size_override("font_size", 22)
 	b.pressed.connect(callback)
 	_style_button(b, Color(0.07, 0.09, 0.13, 0.93), TEXT, 18)
 	return b
@@ -534,14 +570,14 @@ func _title(text: String) -> Label:
 	var l := Label.new()
 	l.text = text
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.add_theme_font_size_override("font_size", 46)
+	l.add_theme_font_size_override("font_size", 54)
 	l.add_theme_color_override("font_color", TEXT)
 	return l
 
 func _section_label(text: String) -> Label:
 	var l := Label.new()
 	l.text = text
-	l.add_theme_font_size_override("font_size", 18)
+	l.add_theme_font_size_override("font_size", 22)
 	l.add_theme_color_override("font_color", MUTED)
 	return l
 
