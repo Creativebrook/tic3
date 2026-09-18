@@ -35,6 +35,7 @@ var timer_p2: Label
 var turn_label: Label
 var layer_box: VBoxContainer
 var result_panel: PanelContainer
+var side_panel: PanelContainer
 var layer_buttons: Array[Button] = []
 var stack_button: Button
 
@@ -273,17 +274,17 @@ func _build_hud() -> void:
 	turn_label.add_theme_color_override("font_color", MUTED)
 	hud.add_child(turn_label)
 
-	var right_panel := PanelContainer.new()
-	right_panel.position = Vector2(868, 430)
-	right_panel.size = Vector2(174, 700)
-	_apply_panel_style(right_panel, Color(0.055, 0.075, 0.105, 0.90), 24)
-	hud.add_child(right_panel)
+	side_panel = PanelContainer.new()
+	side_panel.position = Vector2(868, 430)
+	side_panel.size = Vector2(174, 700)
+	_apply_panel_style(side_panel, Color(0.055, 0.075, 0.105, 0.90), 24)
+	hud.add_child(side_panel)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 12)
 	margin.add_theme_constant_override("margin_right", 12)
 	margin.add_theme_constant_override("margin_top", 18)
 	margin.add_theme_constant_override("margin_bottom", 18)
-	right_panel.add_child(margin)
+	side_panel.add_child(margin)
 	layer_box = VBoxContainer.new()
 	layer_buttons.clear()
 	layer_box.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -389,6 +390,16 @@ func _set_view_controls_locked(locked: bool) -> void:
 		stack_button.disabled = locked
 		stack_button.modulate = Color(1, 1, 1, 0.45) if locked else Color.WHITE
 
+func _hide_side_panel() -> void:
+	if not is_instance_valid(side_panel):
+		return
+	var tw := side_panel.create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(side_panel, "modulate:a", 0.0, 0.20)
+	tw.tween_callback(func():
+		if is_instance_valid(side_panel):
+			side_panel.visible = false
+	)
+
 func _refresh_stack_button() -> void:
 	if stack_button == null or board_view == null:
 		return
@@ -444,7 +455,9 @@ func _take_ai_turn() -> void:
 func _finish_game(winner: int, line: PackedInt32Array) -> void:
 	game_over = true
 	ai_busy = false
+	_refresh_hud()
 	_set_view_controls_locked(true)
+	_hide_side_panel()
 	camera_rig.stop_victory_orbit()
 	camera_rig.set_interaction_enabled(false)
 
@@ -461,6 +474,7 @@ func _finish_game(winner: int, line: PackedInt32Array) -> void:
 		if not game_over or board_view == null:
 			return
 		if winner != 0:
+			board_view.show_winning_highlight(line)
 			board_view.show_winning_line(line)
 			Input.vibrate_handheld(80)
 		_show_result(winner)
@@ -471,13 +485,13 @@ func _show_result(winner: int) -> void:
 	result_panel = PanelContainer.new()
 	result_panel.anchor_left = 0.5
 	result_panel.anchor_right = 0.5
-	result_panel.anchor_top = 0.70
-	result_panel.anchor_bottom = 0.70
+	result_panel.anchor_top = 0.75
+	result_panel.anchor_bottom = 0.75
 	result_panel.offset_left = -420
 	result_panel.offset_right = 420
 	result_panel.offset_top = -155
 	result_panel.offset_bottom = 190
-	_apply_panel_style(result_panel, Color(0.04, 0.055, 0.08, 0.97), 32)
+	_apply_panel_style(result_panel, Color(0.09, 0.12, 0.17, 0.985), 32)
 	hud.add_child(result_panel)
 
 	var margin := MarginContainer.new()
@@ -547,6 +561,9 @@ func _refresh_hud() -> void:
 	_refresh_timers()
 	if turn_label == null:
 		return
+	if game_over:
+		turn_label.text = ""
+		return
 	if ai_busy:
 		turn_label.text = "CPU THINKING…"
 	elif current_player == 1:
@@ -558,7 +575,7 @@ func _refresh_timers() -> void:
 	if timer_p1:
 		timer_p1.text = _format_time(player_times[1])
 	if timer_p2:
-		timer_p2.text = "THINKING…" if mode == "CPU" and ai_busy else (_format_time(player_times[2]) if mode == "PVP" else "—")
+		timer_p2.text = "THINKING…" if mode == "CPU" and ai_busy and not game_over else (_format_time(player_times[2]) if mode == "PVP" else "—")
 
 func _show_highscores() -> void:
 	_clear_ui()
