@@ -36,6 +36,7 @@ var turn_label: Label
 var layer_box: VBoxContainer
 var result_panel: PanelContainer
 var layer_buttons: Array[Button] = []
+var stack_button: Button
 
 func _ready() -> void:
 	_build_world()
@@ -294,7 +295,9 @@ func _build_hud() -> void:
 		layer_buttons.append(layer_btn)
 	_refresh_layer_buttons()
 	layer_box.add_child(_spacer(16))
-	layer_box.add_child(_small_button("STACK", func(): board_view.toggle_exploded()))
+	stack_button = _small_button("STACK", _toggle_stack_mode)
+	layer_box.add_child(stack_button)
+	_refresh_stack_button()
 
 	var help := Label.new()
 	help.text = "Drag to rotate  •  Pinch / wheel to zoom\nTap a layer number to isolate it"
@@ -345,8 +348,27 @@ func _layer_button(text: String, layer: int) -> Button:
 func _select_layer(layer: int) -> void:
 	if board_view == null:
 		return
+	if board_view.is_stack_mode():
+		board_view.set_stack_mode(false)
+		camera_rig.set_stack_mode(false, board_size)
 	board_view.set_focus_layer(layer)
 	_refresh_layer_buttons()
+	_refresh_stack_button()
+
+func _toggle_stack_mode() -> void:
+	if board_view == null:
+		return
+	var enabled := not board_view.is_stack_mode()
+	board_view.set_stack_mode(enabled)
+	camera_rig.set_stack_mode(enabled, board_size)
+	_refresh_layer_buttons()
+	_refresh_stack_button()
+
+func _refresh_stack_button() -> void:
+	if stack_button == null or board_view == null:
+		return
+	var active := board_view.is_stack_mode()
+	_style_button(stack_button, Color(0.08, 0.34, 0.42, 1.0) if active else Color(0.07, 0.09, 0.13, 0.93), CYAN if active else TEXT, 18)
 
 func _refresh_layer_buttons() -> void:
 	if board_view == null:
