@@ -4,10 +4,10 @@ extends Node3D
 var camera: Camera3D
 var yaw := deg_to_rad(-36.0)
 var pitch := deg_to_rad(-28.0)
-var distance := 14.0
+var distance := 13.0
 var min_distance := 7.0
 var max_distance := 30.0
-var fit_distance := 14.0
+var fit_distance := 13.0
 var dragging := false
 var last_pointer := Vector2.ZERO
 var pinch_distance := 0.0
@@ -18,6 +18,9 @@ var auto_rotate_speed := 0.28
 func _ready() -> void:
 	camera = Camera3D.new()
 	camera.fov = 42.0
+	camera.near = 0.05
+	camera.far = 100.0
+	camera.current = true
 	add_child(camera)
 	_update_camera()
 
@@ -30,28 +33,24 @@ func reset_view(board_size := 3) -> void:
 	auto_rotating = false
 	yaw = deg_to_rad(-36.0)
 	pitch = deg_to_rad(-28.0)
-	_fit_distance_to_board(board_size)
+	# Deterministic mobile framing. The previous viewport-derived calculation
+	# could push the camera too far away on tall Android displays.
+	match board_size:
+		3:
+			fit_distance = 13.0
+		4:
+			fit_distance = 17.0
+		5:
+			fit_distance = 21.0
+		_:
+			fit_distance = 13.0
 	distance = fit_distance
+	min_distance = fit_distance * 0.58
+	max_distance = fit_distance * 1.9
 	_update_camera()
 
 func set_auto_rotate(enabled: bool) -> void:
 	auto_rotating = enabled
-
-func _fit_distance_to_board(board_size: int) -> void:
-	if camera == null:
-		return
-	var viewport_size := get_viewport().get_visible_rect().size
-	var aspect := max(0.35, viewport_size.x / max(1.0, viewport_size.y))
-	var plane_half_extent := (float(board_size - 1) * 1.22 * 0.5) + 0.62
-	var projected_half_width := plane_half_extent * (abs(cos(yaw)) + abs(sin(yaw))) + 0.20
-	var tan_half_vertical := tan(deg_to_rad(camera.fov) * 0.5)
-	var tan_half_horizontal := tan_half_vertical * aspect
-	var horizontal_fit := projected_half_width / max(0.08, tan_half_horizontal * 0.84)
-	var layer_half_extent := (float(board_size - 1) * 1.55 * 0.5) + 0.60
-	var vertical_fit := layer_half_extent / max(0.08, tan_half_vertical * 0.70)
-	fit_distance = max(horizontal_fit, vertical_fit, 9.5)
-	min_distance = fit_distance * 0.58
-	max_distance = fit_distance * 2.15
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
