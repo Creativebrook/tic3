@@ -39,6 +39,7 @@ var result_panel: PanelContainer
 var side_panel: PanelContainer
 var layer_buttons: Array[Button] = []
 var stack_button: Button
+var highscore_size_filter := 3
 
 func _ready() -> void:
 	_build_world()
@@ -599,36 +600,238 @@ func _refresh_timers() -> void:
 
 func _show_highscores() -> void:
 	_clear_ui()
+
 	var bg := ColorRect.new()
-	bg.color = Color(0.02, 0.025, 0.035, 0.94)
+	bg.color = BG
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay_root.add_child(bg)
-	var v := VBoxContainer.new()
-	v.position = Vector2(70, 100)
-	v.size = Vector2(940, 1650)
-	v.add_theme_constant_override("separation", 12)
-	overlay_root.add_child(v)
-	v.add_child(_ghost_button("← BACK", _show_home))
-	v.add_child(_title("HIGHSCORES"))
+
+	var root_margin := MarginContainer.new()
+	root_margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	root_margin.add_theme_constant_override("margin_left", 58)
+	root_margin.add_theme_constant_override("margin_right", 58)
+	root_margin.add_theme_constant_override("margin_top", 72)
+	root_margin.add_theme_constant_override("margin_bottom", 64)
+	overlay_root.add_child(root_margin)
+
+	var page := VBoxContainer.new()
+	page.add_theme_constant_override("separation", 20)
+	root_margin.add_child(page)
+
+	var top_bar := HBoxContainer.new()
+	top_bar.add_theme_constant_override("separation", 16)
+	page.add_child(top_bar)
+
+	var back_btn := _ghost_button("← BACK", _show_home)
+	back_btn.custom_minimum_size = Vector2(230, 72)
+	top_bar.add_child(back_btn)
+
+	var top_spacer := Control.new()
+	top_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top_bar.add_child(top_spacer)
+
+	var local_badge := Label.new()
+	local_badge.text = "LOCAL RECORDS"
+	local_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	local_badge.add_theme_font_size_override("font_size", 18)
+	local_badge.add_theme_color_override("font_color", MUTED)
+	top_bar.add_child(local_badge)
+
+	page.add_child(_spacer(10))
+
+	var title := _title("HIGHSCORES")
+	page.add_child(title)
+
+	var subtitle := Label.new()
+	subtitle.text = "Your fastest wins against the computer"
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.add_theme_font_size_override("font_size", 22)
+	subtitle.add_theme_color_override("font_color", MUTED)
+	page.add_child(subtitle)
+
+	page.add_child(_spacer(10))
+
+	var size_tabs := HBoxContainer.new()
+	size_tabs.add_theme_constant_override("separation", 12)
+	page.add_child(size_tabs)
 	for n in [3, 4, 5]:
-		for d in ["CASUAL", "SMART", "EXPERT"]:
-			var entries := score_store.get_scores(n, d)
-			if entries.is_empty():
-				continue
-			v.add_child(_section_label("%d×%d×%d  •  %s" % [n, n, n, d]))
-			for i in range(min(5, entries.size())):
-				var e = entries[i]
-				var row := Label.new()
-				row.text = "#%d     %s     %d moves     %s" % [i + 1, _format_time(float(e["time"])), int(e["moves"]), String(e["date"])]
-				row.add_theme_font_size_override("font_size", 27)
-				row.add_theme_color_override("font_color", TEXT if i == 0 else MUTED)
-				v.add_child(row)
-	if v.get_child_count() <= 2:
+		var size_btn := _highscore_size_button(n)
+		size_tabs.add_child(size_btn)
+
+	var rule := Label.new()
+	rule.text = "Lower time ranks first  •  Ties are decided by fewer moves"
+	rule.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	rule.add_theme_font_size_override("font_size", 18)
+	rule.add_theme_color_override("font_color", Color(0.52, 0.58, 0.67, 0.90))
+	page.add_child(rule)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	page.add_child(scroll)
+
+	var content := VBoxContainer.new()
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content.add_theme_constant_override("separation", 16)
+	scroll.add_child(content)
+
+	for difficulty_name in ["CASUAL", "SMART", "EXPERT"]:
+		content.add_child(_highscore_bucket_card(highscore_size_filter, difficulty_name))
+
+	content.add_child(_spacer(8))
+	var footer := Label.new()
+	footer.text = "Records are stored on this device."
+	footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	footer.add_theme_font_size_override("font_size", 17)
+	footer.add_theme_color_override("font_color", Color(0.42, 0.47, 0.55, 0.82))
+	content.add_child(footer)
+
+func _highscore_size_button(size_value: int) -> Button:
+	var b := Button.new()
+	b.text = "%d×%d×%d" % [size_value, size_value, size_value]
+	b.custom_minimum_size = Vector2(0, 78)
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.add_theme_font_size_override("font_size", 23)
+	b.pressed.connect(func():
+		highscore_size_filter = size_value
+		_show_highscores()
+	)
+	var active := highscore_size_filter == size_value
+	_style_button(
+		b,
+		Color(0.08, 0.34, 0.42, 1.0) if active else PANEL,
+		CYAN if active else TEXT,
+		20
+	)
+	return b
+
+func _highscore_bucket_card(size_value: int, difficulty_name: String) -> PanelContainer:
+	var card := PanelContainer.new()
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_apply_panel_style(card, Color(0.055, 0.075, 0.105, 0.96), 28)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 28)
+	margin.add_theme_constant_override("margin_right", 28)
+	margin.add_theme_constant_override("margin_top", 24)
+	margin.add_theme_constant_override("margin_bottom", 24)
+	card.add_child(margin)
+
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 14)
+	margin.add_child(v)
+
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 12)
+	v.add_child(header)
+
+	var difficulty_label := Label.new()
+	difficulty_label.text = difficulty_name
+	difficulty_label.add_theme_font_size_override("font_size", 24)
+	difficulty_label.add_theme_color_override("font_color", _difficulty_accent(difficulty_name))
+	difficulty_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(difficulty_label)
+
+	var board_label := Label.new()
+	board_label.text = "%d×%d×%d" % [size_value, size_value, size_value]
+	board_label.add_theme_font_size_override("font_size", 19)
+	board_label.add_theme_color_override("font_color", MUTED)
+	header.add_child(board_label)
+
+	var entries := score_store.get_scores(size_value, difficulty_name)
+	if entries.is_empty():
 		var empty := Label.new()
-		empty.text = "No records yet. Beat the computer to set the first one."
-		empty.add_theme_font_size_override("font_size", 27)
-		empty.add_theme_color_override("font_color", MUTED)
+		empty.text = "No record yet"
+		empty.custom_minimum_size = Vector2(0, 66)
+		empty.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		empty.add_theme_font_size_override("font_size", 22)
+		empty.add_theme_color_override("font_color", Color(0.46, 0.51, 0.59, 0.90))
 		v.add_child(empty)
+		return card
+
+	var columns := HBoxContainer.new()
+	columns.add_theme_constant_override("separation", 10)
+	v.add_child(columns)
+	columns.add_child(_score_column_label("RANK", 90, HORIZONTAL_ALIGNMENT_LEFT))
+	columns.add_child(_score_column_label("TIME", 230, HORIZONTAL_ALIGNMENT_LEFT))
+	columns.add_child(_score_column_label("MOVES", 190, HORIZONTAL_ALIGNMENT_LEFT))
+	var date_header := _score_column_label("DATE", 0, HORIZONTAL_ALIGNMENT_RIGHT)
+	date_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	columns.add_child(date_header)
+
+	for i in range(min(5, entries.size())):
+		v.add_child(_highscore_row(i + 1, entries[i]))
+
+	return card
+
+func _score_column_label(text_value: String, width: float, alignment: HorizontalAlignment) -> Label:
+	var l := Label.new()
+	l.text = text_value
+	if width > 0:
+		l.custom_minimum_size.x = width
+	l.horizontal_alignment = alignment
+	l.add_theme_font_size_override("font_size", 15)
+	l.add_theme_color_override("font_color", Color(0.45, 0.51, 0.60, 0.92))
+	return l
+
+func _highscore_row(rank: int, entry: Dictionary) -> Control:
+	var row := PanelContainer.new()
+	row.custom_minimum_size = Vector2(0, 72)
+	var is_best := rank == 1
+	_apply_panel_style(row, Color(0.08, 0.12, 0.17, 0.96) if is_best else Color(0.04, 0.055, 0.08, 0.76), 18)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 18)
+	margin.add_theme_constant_override("margin_right", 18)
+	row.add_child(margin)
+
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 10)
+	margin.add_child(h)
+
+	var rank_label := Label.new()
+	rank_label.text = "#%d" % rank
+	rank_label.custom_minimum_size.x = 72
+	rank_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	rank_label.add_theme_font_size_override("font_size", 22)
+	rank_label.add_theme_color_override("font_color", CYAN if is_best else MUTED)
+	h.add_child(rank_label)
+
+	var time_label := Label.new()
+	time_label.text = _format_time(float(entry["time"]))
+	time_label.custom_minimum_size.x = 230
+	time_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	time_label.add_theme_font_size_override("font_size", 27 if is_best else 24)
+	time_label.add_theme_color_override("font_color", TEXT if is_best else Color(0.80, 0.84, 0.90, 1.0))
+	h.add_child(time_label)
+
+	var moves_label := Label.new()
+	moves_label.text = "%d moves" % int(entry["moves"])
+	moves_label.custom_minimum_size.x = 190
+	moves_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	moves_label.add_theme_font_size_override("font_size", 20)
+	moves_label.add_theme_color_override("font_color", TEXT if is_best else MUTED)
+	h.add_child(moves_label)
+
+	var date_label := Label.new()
+	date_label.text = String(entry["date"])
+	date_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	date_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	date_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	date_label.add_theme_font_size_override("font_size", 18)
+	date_label.add_theme_color_override("font_color", MUTED)
+	h.add_child(date_label)
+
+	return row
+
+func _difficulty_accent(difficulty_name: String) -> Color:
+	match difficulty_name:
+		"CASUAL":
+			return GREEN
+		"EXPERT":
+			return ORANGE
+		_:
+			return CYAN
 
 func _format_time(seconds: float) -> String:
 	var total_cs := int(seconds * 100.0)
