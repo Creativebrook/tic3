@@ -170,16 +170,25 @@ func place_piece(idx: int, player: int, animate := true) -> void:
 		return
 	var cell: Node3D = cell_nodes[idx]
 	var piece := _make_x() if player == 1 else _make_o()
-	piece.position.y = 0.18
+	var layer_index := int(idx / (board.size * board.size))
+	piece.set_meta("layer_index", layer_index)
+	piece.position.y = _piece_target_height(layer_index)
+	var level_tag := _make_level_tag(layer_index + 1)
+	piece.add_child(level_tag)
 	cell.add_child(piece)
 	piece_nodes[idx] = piece
+
+	var target_scale := _piece_target_scale(layer_index)
+	level_tag.visible = stack_mode
 	if animate:
 		piece.scale = Vector3.ONE * 0.12
 		piece.rotation.y = -0.7
 		var tween := piece.create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		tween.set_parallel(true)
-		tween.tween_property(piece, "scale", Vector3.ONE, 0.28)
+		tween.tween_property(piece, "scale", target_scale, 0.28)
 		tween.tween_property(piece, "rotation:y", 0.0, 0.28)
+	else:
+		piece.scale = target_scale
 
 func _make_x() -> Node3D:
 	var root := Node3D.new()
@@ -203,6 +212,53 @@ func _make_o() -> Node3D:
 	mesh_instance.mesh = torus
 	mesh_instance.material_override = mat_o
 	return mesh_instance
+
+func _make_level_tag(level_number: int) -> Label3D:
+	var tag := Label3D.new()
+	tag.name = "LevelTag"
+	tag.text = "L%d" % level_number
+	tag.position = Vector3(0.34, 0.30, -0.34)
+	tag.font_size = 28
+	tag.outline_size = 8
+	tag.pixel_size = 0.0105
+	tag.modulate = Color(0.90, 0.95, 1.0, 0.96)
+	tag.outline_modulate = Color(0.025, 0.035, 0.055, 0.96)
+	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	tag.no_depth_test = true
+	return tag
+
+func _piece_target_scale(layer_index: int) -> Vector3:
+	if not stack_mode or board == null or board.size <= 1:
+		return Vector3.ONE
+	var depth_t := float(layer_index) / float(board.size - 1)
+	return Vector3.ONE * lerp(0.88, 1.08, depth_t)
+
+func _piece_target_height(layer_index: int) -> float:
+	if not stack_mode or board == null or board.size <= 1:
+		return 0.18
+	var depth_t := float(layer_index) / float(board.size - 1)
+	return lerp(0.17, 0.27, depth_t)
+
+func _apply_piece_depth_cues(animated := false) -> void:
+	for idx in piece_nodes.keys():
+		var piece: Node3D = piece_nodes[idx]
+		if not is_instance_valid(piece):
+			continue
+		var layer_index := int(piece.get_meta("layer_index", 0))
+		var target_scale := _piece_target_scale(layer_index)
+		var target_y := _piece_target_height(layer_index)
+		var tag := piece.get_node_or_null("LevelTag") as Label3D
+		if tag:
+			tag.visible = stack_mode
+
+		if animated:
+			var tw := piece.create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+			tw.set_parallel(true)
+			tw.tween_property(piece, "scale", target_scale, 0.30)
+			tw.tween_property(piece, "position:y", target_y, 0.30)
+		else:
+			piece.scale = target_scale
+			piece.position.y = target_y
 
 func show_winning_line(line: PackedInt32Array) -> void:
 	if line.is_empty():
@@ -314,6 +370,8 @@ func _apply_layer_positions(animated := false) -> void:
 		else:
 			layer_roots[z].position = target
 			layer_roots[z].scale = target_scale
+
+	_apply_piece_depth_cues(animated)
 
 func _set_layer_visual(layer_index: int, panel_opacity: float, dim_factor: float, piece_opacity: float) -> void:
 	if layer_index < 0 or layer_index >= layer_roots.size():
