@@ -214,7 +214,7 @@ func _start_game() -> void:
 	world.add_child(board_view)
 	board_view.setup(board)
 	camera_rig.set_auto_rotate(false)
-	camera_rig.reset_view(board_size)
+	camera_rig.reset_view(board_size, false)
 	_build_hud()
 	_refresh_hud()
 
@@ -247,7 +247,7 @@ func _build_hud() -> void:
 	mode_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mode_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	top.add_child(mode_label)
-	var reset_btn := _small_button("RESET VIEW", func(): camera_rig.reset_view(board_size))
+	var reset_btn := _small_button("RESET VIEW", _reset_game_view)
 	top.add_child(reset_btn)
 
 	var clocks := HBoxContainer.new()
@@ -364,6 +364,14 @@ func _toggle_stack_mode() -> void:
 	_refresh_layer_buttons()
 	_refresh_stack_button()
 
+func _reset_game_view(animated := true) -> void:
+	if board_view == null:
+		return
+	board_view.reset_view_state(animated)
+	camera_rig.reset_view(board_size, animated)
+	_refresh_layer_buttons()
+	_refresh_stack_button()
+
 func _refresh_stack_button() -> void:
 	if stack_button == null or board_view == null:
 		return
@@ -375,7 +383,7 @@ func _refresh_layer_buttons() -> void:
 		return
 	for b in layer_buttons:
 		var layer := int(b.get_meta("layer"))
-		var active := layer == board_view.focused_layer
+		var active := not board_view.is_stack_mode() and layer == board_view.focused_layer
 		b.add_theme_font_size_override("font_size", 23)
 		_style_button(b, Color(0.08, 0.34, 0.42, 1.0) if active else Color(0.07, 0.09, 0.13, 0.93), CYAN if active else TEXT, 18)
 
@@ -419,6 +427,9 @@ func _take_ai_turn() -> void:
 func _finish_game(winner: int, line: PackedInt32Array) -> void:
 	game_over = true
 	ai_busy = false
+	# Always normalize the board before drawing the win line. This prevents a
+	# line computed in a focused/STACK layout from ending up visually off-axis.
+	_reset_game_view(false)
 	if winner != 0:
 		board_view.show_winning_line(line)
 		Input.vibrate_handheld(80)
