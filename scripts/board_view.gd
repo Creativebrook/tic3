@@ -78,6 +78,7 @@ func _rebuild() -> void:
 		layer_roots.append(layer)
 		var layer_material := mat_cell.duplicate() as ShaderMaterial
 		layer_material.set_shader_parameter("layer_opacity", 1.0)
+		layer_material.set_shader_parameter("layer_dim", 1.0)
 		layer_materials.append(layer_material)
 		for y in range(board.size):
 			for x in range(board.size):
@@ -263,12 +264,12 @@ func _apply_layer_positions(animated := false) -> void:
 				var direction := -1.0 if z < focused_layer else 1.0
 				var rank := abs(z - focused_layer)
 				# Keep inactive layers grouped like a compact stack on each side
-				# while leaving a clear interaction gap around the active layer.
-				target.y = focus_base_y + direction * (1.72 + float(rank - 1) * 0.30)
+				# while leaving a larger interaction gap around the active layer.
+				target.y = focus_base_y + direction * (2.05 + float(rank - 1) * 0.24)
 				target_scale = Vector3.ONE * 0.68
-				visible_alpha = 0.20
+				visible_alpha = 0.08
 
-		_set_layer_alpha(z, visible_alpha)
+		_set_layer_visual(z, visible_alpha, 1.0 if z == focused_layer or focused_layer < 0 else 0.16)
 		_set_layer_interactive(layer_roots[z], interactive)
 
 		if animated:
@@ -280,12 +281,13 @@ func _apply_layer_positions(animated := false) -> void:
 			layer_roots[z].position = target
 			layer_roots[z].scale = target_scale
 
-func _set_layer_alpha(layer_index: int, alpha: float) -> void:
-	# The board cells use a custom shader. GeometryInstance3D.transparency does
-	# not reliably modulate custom ShaderMaterial output on the Android mobile
-	# renderer, so opacity is driven explicitly inside the shader per layer.
+func _set_layer_visual(layer_index: int, alpha: float, dim_factor: float) -> void:
+	# Android's mobile renderer can make very bright transparent glass still read
+	# as opaque. Drive both alpha and a disabled-state dim factor in the shader so
+	# inactive layers are unmistakably secondary even under strong lights.
 	if layer_index >= 0 and layer_index < layer_materials.size():
 		layer_materials[layer_index].set_shader_parameter("layer_opacity", alpha)
+		layer_materials[layer_index].set_shader_parameter("layer_dim", dim_factor)
 	_set_piece_alpha_recursive(layer_roots[layer_index], alpha)
 
 func _set_piece_alpha_recursive(node: Node, alpha: float) -> void:
