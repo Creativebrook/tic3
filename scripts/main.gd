@@ -41,6 +41,8 @@ var side_panel_tween: Tween
 var layer_buttons: Array[Button] = []
 var stack_button: Button
 var stack_spacer: Control
+var levels_clip: Control
+var levels_box: VBoxContainer
 var highscore_size_filter := 3
 
 func _ready() -> void:
@@ -297,9 +299,24 @@ func _build_hud() -> void:
 	var all_btn := _layer_button("ALL", -1)
 	layer_box.add_child(all_btn)
 	layer_buttons.append(all_btn)
+
+	# Numbered levels live inside one clipped block. STACK mode animates this
+	# single block instead of resizing every button independently, avoiding the
+	# container reflow "bumps" that were visible in the previous release.
+	levels_clip = Control.new()
+	levels_clip.clip_contents = true
+	levels_clip.custom_minimum_size = Vector2(126, _levels_block_height())
+	layer_box.add_child(levels_clip)
+
+	levels_box = VBoxContainer.new()
+	levels_box.position = Vector2.ZERO
+	levels_box.size = Vector2(126, _levels_block_height())
+	levels_box.add_theme_constant_override("separation", 10)
+	levels_clip.add_child(levels_box)
+
 	for z in range(board_size - 1, -1, -1):
 		var layer_btn := _layer_button(str(z + 1), z)
-		layer_box.add_child(layer_btn)
+		levels_box.add_child(layer_btn)
 		layer_buttons.append(layer_btn)
 	_refresh_layer_buttons()
 	stack_spacer = _spacer(16)
@@ -424,75 +441,66 @@ func _hide_side_panel() -> void:
 			side_panel.visible = false
 	)
 
+func _levels_block_height() -> float:
+	return float(board_size * 70 + max(board_size - 1, 0) * 10)
+
 func _side_panel_normal_height() -> float:
-	# Keep the panel top edge fixed and fit its height to the selected board.
-	# 3³ = 452, 4³ = 532, 5³ = 612.
+	# Content-fit height with a fixed top edge: 3³=452, 4³=532, 5³=612.
 	return 452.0 + float(max(board_size - 3, 0)) * 80.0
 
 func _refresh_side_panel_mode(animated := true) -> void:
-	if side_panel == null or board_view == null:
+	if side_panel == null or board_view == null or levels_clip == null:
 		return
 
 	var compact := board_view.is_stack_mode()
 	var target_height := 186.0 if compact else _side_panel_normal_height()
-	var duration := 0.46
+	var target_levels_height := 0.0 if compact else _levels_block_height()
+	var duration := 0.50
 
-	# Never move the menu horizontally or vertically: STACK only collapses it.
+	# Same top/right anchor in every state. Only the levels block collapses,
+	# allowing STACK to glide continuously until it sits directly below ALL.
 	side_panel.position = Vector2(868, 430)
 	side_panel.custom_minimum_size = Vector2.ZERO
 	layer_box.add_theme_constant_override("separation", 10)
-	if stack_button:
-		stack_button.custom_minimum_size = Vector2(130, 70)
 
 	if is_instance_valid(side_panel_tween):
 		side_panel_tween.kill()
 
-	var numbered_buttons: Array[Button] = []
-	for button in layer_buttons:
-		button.custom_minimum_size.x = 126
-		if int(button.get_meta("layer")) >= 0:
-			numbered_buttons.append(button)
+	if not compact:
+		levels_clip.visible = true
+		if levels_clip.custom_minimum_size.y <= 0.5:
+			levels_clip.custom_minimum_size.y = 0.0
+			levels_clip.modulate.a = 0.0
+		if stack_spacer:
+			stack_spacer.visible = true
+			if stack_spacer.custom_minimum_size.y <= 0.5:
+				stack_spacer.custom_minimum_size.y = 0.0
 
 	if not animated:
 		side_panel.size = Vector2(174, target_height)
+		levels_clip.custom_minimum_size = Vector2(126, target_levels_height)
+		levels_clip.modulate.a = 0.0 if compact else 1.0
+		levels_clip.visible = not compact
 		if stack_spacer:
-			stack_spacer.visible = not compact
 			stack_spacer.custom_minimum_size = Vector2(1, 0 if compact else 16)
-		for button in numbered_buttons:
-			button.custom_minimum_size = Vector2(126, 0 if compact else 70)
-			button.modulate.a = 0.0 if compact else 1.0
-			button.visible = not compact
+			stack_spacer.visible = not compact
 		return
 
-	# Expanding: reinsert the numbered buttons at zero height, then grow them.
-	# Collapsing: their height fades to zero, so STACK glides up under ALL.
-	if not compact:
-		for button in numbered_buttons:
-			button.visible = true
-			button.custom_minimum_size = Vector2(126, 0)
-			button.modulate.a = 0.0
-		if stack_spacer:
-			stack_spacer.visible = true
-			stack_spacer.custom_minimum_size = Vector2(1, 0)
-
-	side_panel_tween = create_tween().set_trans(Tween.TRANS_QUINT).set_ease(Tween.EASE_IN_OUT)
+	side_panel_tween = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	side_panel_tween.set_parallel(true)
 	side_panel_tween.tween_property(side_panel, "size", Vector2(174, target_height), duration)
-
-	for button in numbered_buttons:
-		side_panel_tween.tween_property(
-			button,
-			"custom_minimum_size",
-			Vector2(126, 0 if compact else 70),
-			duration
-		)
-		side_panel_tween.tween_property(
-			button,
-			"modulate:a",
-			0.0 if compact else 1.0,
-			duration * 0.78
-		)
-
+	side_panel_tween.tween_property(
+		levels_clip,
+		"custom_minimum_size",
+		Vector2(126, target_levels_height),
+		duration
+	)
+	side_panel_tween.tween_property(
+		levels_clip,
+		"modulate:a",
+		0.0 if compact else 1.0,
+		duration * 0.72
+	)
 	if stack_spacer:
 		side_panel_tween.tween_property(
 			stack_spacer,
@@ -505,8 +513,7 @@ func _refresh_side_panel_mode(animated := true) -> void:
 		side_panel_tween.finished.connect(func():
 			if board_view == null or not board_view.is_stack_mode():
 				return
-			for button in numbered_buttons:
-				button.visible = false
+			levels_clip.visible = false
 			if stack_spacer:
 				stack_spacer.visible = false
 		, CONNECT_ONE_SHOT)
