@@ -12,6 +12,7 @@ var layer_roots: Array[Node3D] = []
 var layer_materials: Array[ShaderMaterial] = []
 var focused_layer := -1
 var exploded := true
+var stack_mode := false
 var spacing := 1.22
 var layer_gap := 1.55
 
@@ -244,12 +245,19 @@ func global_position_for_cell(idx: int) -> Vector3:
 	return cell.to_global(Vector3(0, 0.20, 0))
 
 func set_focus_layer(layer: int) -> void:
+	stack_mode = false
+	exploded = true
 	focused_layer = layer
 	_apply_layer_positions(true)
 
-func toggle_exploded() -> void:
-	exploded = not exploded
+func set_stack_mode(enabled: bool) -> void:
+	stack_mode = enabled
+	focused_layer = -1
+	exploded = not enabled
 	_apply_layer_positions(true)
+
+func is_stack_mode() -> bool:
+	return stack_mode
 
 func _apply_layer_positions(animated := false) -> void:
 	if board == null:
