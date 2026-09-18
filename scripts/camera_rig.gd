@@ -14,6 +14,8 @@ var pinch_distance := 0.0
 var touches: Dictionary = {}
 var auto_rotating := false
 var auto_rotate_speed := 0.28
+var victory_orbit_mode := false
+var interaction_enabled := true
 
 var stack_mode := false
 var current_board_size := 3
@@ -87,6 +89,38 @@ func is_stack_mode() -> bool:
 func set_auto_rotate(enabled: bool) -> void:
 	auto_rotating = enabled and not stack_mode
 
+func set_interaction_enabled(enabled: bool) -> void:
+	interaction_enabled = enabled
+	if not enabled:
+		dragging = false
+		touches.clear()
+		pinch_distance = 0.0
+
+func start_victory_orbit(board_size := 3) -> void:
+	current_board_size = board_size
+	victory_orbit_mode = true
+	interaction_enabled = true
+	stack_mode = false
+	_apply_normal_limits(board_size)
+	auto_rotating = true
+
+func stop_victory_orbit() -> void:
+	victory_orbit_mode = false
+	auto_rotating = false
+
+func _return_to_victory_orbit() -> void:
+	if not victory_orbit_mode:
+		return
+	auto_rotating = false
+	_apply_normal_limits(current_board_size)
+	_animate_view(deg_to_rad(-36.0), deg_to_rad(-28.0), fit_distance, 0.42)
+	if is_instance_valid(view_tween):
+		view_tween.finished.connect(_resume_victory_rotation, CONNECT_ONE_SHOT)
+
+func _resume_victory_rotation() -> void:
+	if victory_orbit_mode:
+		auto_rotating = true
+
 func _apply_normal_limits(board_size: int) -> void:
 	match board_size:
 		3:
@@ -130,6 +164,9 @@ func _set_view_state(state: Vector3) -> void:
 	_update_camera()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if not interaction_enabled:
+		return
+
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_RIGHT or event.button_index == MOUSE_BUTTON_MIDDLE:
 			if stack_mode:
@@ -137,8 +174,12 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 			if event.pressed:
 				auto_rotating = false
+				if is_instance_valid(view_tween):
+					view_tween.kill()
 			dragging = event.pressed
 			last_pointer = event.position
+			if not event.pressed and victory_orbit_mode:
+				_return_to_victory_orbit()
 		elif event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
 			auto_rotating = false
 			distance = max(min_distance, distance - fit_distance * 0.07)
@@ -153,11 +194,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventScreenTouch:
 		if event.pressed:
 			auto_rotating = false
+			if victory_orbit_mode and is_instance_valid(view_tween):
+				view_tween.kill()
 			touches[event.index] = event.position
 		else:
 			touches.erase(event.index)
 		if touches.size() < 2:
 			pinch_distance = 0.0
+		if not event.pressed and touches.is_empty() and victory_orbit_mode:
+			_return_to_victory_orbit()
 	elif event is InputEventScreenDrag:
 		auto_rotating = false
 		touches[event.index] = event.position
