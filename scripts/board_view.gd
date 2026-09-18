@@ -248,13 +248,13 @@ func _apply_layer_positions(animated := false) -> void:
 
 		if focused_layer >= 0:
 			if z == focused_layer:
-				target.y += 0.10
-				target_scale = Vector3.ONE * 1.08
+				target.y += 0.12
+				target_scale = Vector3.ONE * 1.10
 			else:
 				var focus_direction := -1.0 if z < focused_layer else 1.0
-				target.y += focus_direction * 0.50
-				target_scale = Vector3.ONE * 0.84
-				visible_alpha = 0.20
+				target.y += focus_direction * 0.75
+				target_scale = Vector3.ONE * 0.72
+				visible_alpha = 0.14
 
 		_set_layer_alpha(layer_roots[z], visible_alpha)
 		_set_layer_interactive(layer_roots[z], interactive)
@@ -272,8 +272,12 @@ func _set_layer_alpha(layer: Node3D, alpha: float) -> void:
 	_set_visual_alpha_recursive(layer, alpha)
 
 func _set_visual_alpha_recursive(node: Node, alpha: float) -> void:
-	if node is VisualInstance3D:
-		node.transparency = 1.0 - alpha
+	# transparency belongs to GeometryInstance3D (MeshInstance3D inherits it).
+	# Using VisualInstance3D here left the inactive layers visually unchanged.
+	if node is GeometryInstance3D:
+		var geometry := node as GeometryInstance3D
+		geometry.transparency = 1.0 - alpha
+		geometry.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if alpha < 0.5 else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	for child in node.get_children():
 		_set_visual_alpha_recursive(child, alpha)
 
