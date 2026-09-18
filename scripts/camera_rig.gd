@@ -36,19 +36,25 @@ func _process(delta: float) -> void:
 		yaw += auto_rotate_speed * delta
 		_update_camera()
 
-func reset_view(board_size := 3) -> void:
+func reset_view(board_size := 3, animated := true) -> void:
+	# RESET VIEW is absolute: it always leaves STACK/focus presentation and
+	# returns to the canonical exploded camera, regardless of current mode.
 	current_board_size = board_size
 	auto_rotating = false
-	if stack_mode:
-		_apply_stack_limits(board_size)
-		_animate_view(deg_to_rad(-45.0), deg_to_rad(-58.0), fit_distance, 0.28)
-		return
-
-	yaw = deg_to_rad(-36.0)
-	pitch = deg_to_rad(-28.0)
+	dragging = false
+	touches.clear()
+	pinch_distance = 0.0
+	stack_mode = false
 	_apply_normal_limits(board_size)
-	distance = fit_distance
-	_update_camera()
+	if animated:
+		_animate_view(deg_to_rad(-36.0), deg_to_rad(-28.0), fit_distance, 0.34)
+	else:
+		if is_instance_valid(view_tween):
+			view_tween.kill()
+		yaw = deg_to_rad(-36.0)
+		pitch = deg_to_rad(-28.0)
+		distance = fit_distance
+		_update_camera()
 
 func set_stack_mode(enabled: bool, board_size := 3) -> void:
 	current_board_size = board_size
@@ -68,7 +74,7 @@ func set_stack_mode(enabled: bool, board_size := 3) -> void:
 		saved_distance = distance
 		stack_mode = true
 		_apply_stack_limits(board_size)
-		_animate_view(deg_to_rad(-45.0), deg_to_rad(-58.0), fit_distance, 0.42)
+		_animate_view(deg_to_rad(-42.0), deg_to_rad(-55.0), fit_distance, 0.42)
 	else:
 		stack_mode = false
 		_apply_normal_limits(board_size)
@@ -95,18 +101,19 @@ func _apply_normal_limits(board_size: int) -> void:
 	max_distance = fit_distance * 1.9
 
 func _apply_stack_limits(board_size: int) -> void:
-	# Dedicated analytical 3/4 view: higher pitch and a slightly tighter frame.
+	# B2 analytical framing: slightly farther away than B1 so the complete
+	# cascaded stack remains readable on narrow portrait displays.
 	match board_size:
 		3:
-			fit_distance = 11.8
+			fit_distance = 13.6
 		4:
-			fit_distance = 15.0
+			fit_distance = 17.2
 		5:
-			fit_distance = 18.4
+			fit_distance = 21.0
 		_:
-			fit_distance = 11.8
-	min_distance = fit_distance * 0.88
-	max_distance = fit_distance * 1.28
+			fit_distance = 13.6
+	min_distance = fit_distance * 0.84
+	max_distance = fit_distance * 1.24
 
 func _animate_view(target_yaw: float, target_pitch: float, target_distance: float, duration: float) -> void:
 	if is_instance_valid(view_tween):
