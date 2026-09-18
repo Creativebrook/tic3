@@ -293,7 +293,8 @@ func _build_hud() -> void:
 	side_panel.add_child(margin)
 	layer_box = VBoxContainer.new()
 	layer_buttons.clear()
-	layer_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	# Pin content to the top so ALL never shifts while the levels block collapses.
+	layer_box.alignment = BoxContainer.ALIGNMENT_BEGIN
 	layer_box.add_theme_constant_override("separation", 10)
 	margin.add_child(layer_box)
 	var all_btn := _layer_button("ALL", -1)
@@ -305,12 +306,12 @@ func _build_hud() -> void:
 	# container reflow "bumps" that were visible in the previous release.
 	levels_clip = Control.new()
 	levels_clip.clip_contents = true
+	levels_clip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	levels_clip.custom_minimum_size = Vector2(126, _levels_block_height())
 	layer_box.add_child(levels_clip)
 
 	levels_box = VBoxContainer.new()
-	levels_box.position = Vector2.ZERO
-	levels_box.size = Vector2(126, _levels_block_height())
+	levels_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	levels_box.add_theme_constant_override("separation", 10)
 	levels_clip.add_child(levels_box)
 
@@ -319,9 +320,9 @@ func _build_hud() -> void:
 		levels_box.add_child(layer_btn)
 		layer_buttons.append(layer_btn)
 	_refresh_layer_buttons()
-	stack_spacer = _spacer(16)
-	layer_box.add_child(stack_spacer)
+	stack_spacer = null
 	stack_button = _small_button("STACK", _toggle_stack_mode)
+	stack_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	layer_box.add_child(stack_button)
 	_refresh_stack_button()
 	_refresh_side_panel_mode(false)
@@ -369,6 +370,7 @@ func _clock_panel(name_text: String, accent: Color) -> PanelContainer:
 func _layer_button(text: String, layer: int) -> Button:
 	var b := _small_button(text, func(): _select_layer(layer))
 	b.custom_minimum_size = Vector2(126, 70)
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b.set_meta("layer", layer)
 	return b
 
@@ -445,8 +447,9 @@ func _levels_block_height() -> float:
 	return float(board_size * 70 + max(board_size - 1, 0) * 10)
 
 func _side_panel_normal_height() -> float:
-	# Content-fit height with a fixed top edge: 3³=452, 4³=532, 5³=612.
-	return 452.0 + float(max(board_size - 3, 0)) * 80.0
+	# Content-fit height with no artificial gap before STACK:
+	# 3³=426, 4³=506, 5³=586.
+	return 426.0 + float(max(board_size - 3, 0)) * 80.0
 
 func _refresh_side_panel_mode(animated := true) -> void:
 	if side_panel == null or board_view == null or levels_clip == null:
@@ -471,19 +474,12 @@ func _refresh_side_panel_mode(animated := true) -> void:
 		if levels_clip.custom_minimum_size.y <= 0.5:
 			levels_clip.custom_minimum_size.y = 0.0
 			levels_clip.modulate.a = 0.0
-		if stack_spacer:
-			stack_spacer.visible = true
-			if stack_spacer.custom_minimum_size.y <= 0.5:
-				stack_spacer.custom_minimum_size.y = 0.0
 
 	if not animated:
 		side_panel.size = Vector2(174, target_height)
 		levels_clip.custom_minimum_size = Vector2(126, target_levels_height)
 		levels_clip.modulate.a = 0.0 if compact else 1.0
 		levels_clip.visible = not compact
-		if stack_spacer:
-			stack_spacer.custom_minimum_size = Vector2(1, 0 if compact else 16)
-			stack_spacer.visible = not compact
 		return
 
 	side_panel_tween = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
@@ -501,21 +497,12 @@ func _refresh_side_panel_mode(animated := true) -> void:
 		0.0 if compact else 1.0,
 		duration * 0.72
 	)
-	if stack_spacer:
-		side_panel_tween.tween_property(
-			stack_spacer,
-			"custom_minimum_size",
-			Vector2(1, 0 if compact else 16),
-			duration
-		)
 
 	if compact:
 		side_panel_tween.finished.connect(func():
 			if board_view == null or not board_view.is_stack_mode():
 				return
 			levels_clip.visible = false
-			if stack_spacer:
-				stack_spacer.visible = false
 		, CONNECT_ONE_SHOT)
 
 func _refresh_stack_button() -> void:
