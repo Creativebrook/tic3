@@ -247,6 +247,13 @@ func set_stack_mode(enabled: bool) -> void:
 	exploded = not enabled
 	_apply_layer_positions(true)
 
+func reset_view_state(animated := true) -> void:
+	# Canonical board presentation used by RESET VIEW and end-of-game framing.
+	stack_mode = false
+	exploded = true
+	focused_layer = -1
+	_apply_layer_positions(animated)
+
 func is_stack_mode() -> bool:
 	return stack_mode
 
@@ -268,10 +275,18 @@ func _apply_layer_positions(animated := false) -> void:
 		var interactive := focused_layer < 0 or z == focused_layer
 
 		if stack_mode:
-			# Analytical STACK foundation: panels become genuinely translucent
-			# while X/O pieces stay fully readable through the layers.
-			panel_opacity = 0.34
-			panel_dim = 0.62
+			# B2: use a compact diagonal cascade instead of placing every level on
+			# the exact same footprint. The offset is small enough to read columns,
+			# but large enough to expose level order in a 3/4 camera.
+			var stack_center := (float(board.size) - 1.0) * 0.5
+			var level_offset := float(z) - stack_center
+			target = Vector3(level_offset * 0.16, level_offset * 0.34, -level_offset * 0.13)
+			target_scale = Vector3.ONE * 0.94
+			# Slight depth gradient helps the planes separate without becoming
+			# opaque. Piece-specific depth cues remain a B3 task.
+			var depth_t := 0.5 if board.size <= 1 else float(z) / float(board.size - 1)
+			panel_opacity = lerp(0.26, 0.38, depth_t)
+			panel_dim = lerp(0.48, 0.72, depth_t)
 			piece_opacity = 1.0
 		elif focused_layer >= 0:
 			if z == focused_layer:
