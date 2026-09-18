@@ -70,8 +70,10 @@ func _build_world() -> void:
 	var key := DirectionalLight3D.new()
 	key.rotation_degrees = Vector3(-52, -32, 0)
 	key.light_color = Color("#DDEAFF")
-	key.light_energy = 1.25
+	key.light_energy = 1.18
 	key.shadow_enabled = true
+	key.shadow_opacity = 0.20
+	key.shadow_blur = 5.0
 	world.add_child(key)
 
 	var fill := OmniLight3D.new()
@@ -346,7 +348,7 @@ func _refresh_layer_buttons() -> void:
 		var layer := int(b.get_meta("layer"))
 		var active := layer == board_view.focused_layer
 		b.add_theme_font_size_override("font_size", 23)
-		_style_button(b, Color(0.10, 0.30, 0.36, 0.98) if active else Color(0.07, 0.09, 0.13, 0.93), CYAN if active else TEXT, 18)
+		_style_button(b, Color(0.08, 0.34, 0.42, 1.0) if active else Color(0.07, 0.09, 0.13, 0.93), CYAN if active else TEXT, 18)
 
 func _on_cell_pressed(idx: int) -> void:
 	if game_over or ai_busy or board == null:
@@ -402,19 +404,27 @@ func _show_result(winner: int) -> void:
 	result_panel.anchor_bottom = 0.70
 	result_panel.offset_left = -420
 	result_panel.offset_right = 420
-	result_panel.offset_top = -165
-	result_panel.offset_bottom = 205
+	result_panel.offset_top = -155
+	result_panel.offset_bottom = 190
 	_apply_panel_style(result_panel, Color(0.04, 0.055, 0.08, 0.97), 32)
 	hud.add_child(result_panel)
+
 	var margin := MarginContainer.new()
-	for side in ["margin_left", "margin_right"]:
-		margin.add_theme_constant_override(side, 34)
-	margin.add_theme_constant_override("margin_top", 26)
-	margin.add_theme_constant_override("margin_bottom", 26)
+	margin.add_theme_constant_override("margin_left", 34)
+	margin.add_theme_constant_override("margin_right", 34)
+	margin.add_theme_constant_override("margin_top", 28)
+	margin.add_theme_constant_override("margin_bottom", 28)
 	result_panel.add_child(margin)
+
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 12)
+	v.add_theme_constant_override("separation", 18)
 	margin.add_child(v)
+
+	var top_row := HBoxContainer.new()
+	top_row.custom_minimum_size = Vector2(0, 82)
+	top_row.add_theme_constant_override("separation", 18)
+	v.add_child(top_row)
+
 	var title := Label.new()
 	var extra := ""
 	if winner == 0:
@@ -427,22 +437,40 @@ func _show_result(winner: int) -> void:
 		title.text = "CPU WINS"
 	else:
 		title.text = "PLAYER %d WINS" % winner
-	title.add_theme_font_size_override("font_size", 52)
+	title.add_theme_font_size_override("font_size", 50)
 	title.add_theme_color_override("font_color", GREEN if winner == 1 else TEXT)
-	v.add_child(title)
+	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top_row.add_child(title)
+
 	var meta := Label.new()
 	if mode == "CPU":
 		meta.text = "%s%s  •  %d moves" % [_format_time(player_times[1]), extra, human_moves]
 	else:
 		meta.text = "X %s  •  O %s" % [_format_time(player_times[1]), _format_time(player_times[2])]
-	meta.add_theme_font_size_override("font_size", 27)
+	meta.custom_minimum_size = Vector2(300, 0)
+	meta.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	meta.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	meta.add_theme_font_size_override("font_size", 24)
 	meta.add_theme_color_override("font_color", MUTED)
-	v.add_child(meta)
+	top_row.add_child(meta)
+
+	v.add_child(_spacer(12))
+
 	var buttons := HBoxContainer.new()
-	buttons.add_theme_constant_override("separation", 12)
+	buttons.custom_minimum_size = Vector2(0, 100)
+	buttons.add_theme_constant_override("separation", 16)
 	v.add_child(buttons)
-	buttons.add_child(_accent_button("REMATCH", _start_game))
-	buttons.add_child(_ghost_button("HOME", _show_home))
+
+	var rematch_btn := _accent_button("REMATCH", _start_game)
+	rematch_btn.custom_minimum_size = Vector2(0, 96)
+	rematch_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	buttons.add_child(rematch_btn)
+
+	var home_btn := _ghost_button("HOME", _show_home)
+	home_btn.custom_minimum_size = Vector2(0, 96)
+	home_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	buttons.add_child(home_btn)
 
 func _refresh_hud() -> void:
 	_refresh_timers()
