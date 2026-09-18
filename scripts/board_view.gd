@@ -182,7 +182,7 @@ func place_piece(idx: int, player: int, animate := true) -> void:
 	var layer_index := int(idx / (board.size * board.size))
 	piece.set_meta("layer_index", layer_index)
 	piece.position.y = _piece_target_height(layer_index)
-	var level_tag := _make_level_tag(layer_index)
+	var level_tag := _make_level_tag(layer_index, idx)
 	piece.add_child(level_tag)
 	cell.add_child(piece)
 	piece_nodes[idx] = piece
@@ -222,35 +222,62 @@ func _make_o() -> Node3D:
 	mesh_instance.material_override = mat_o
 	return mesh_instance
 
-func _make_level_tag(layer_index: int) -> Label3D:
+func _make_level_tag(layer_index: int, idx: int) -> Label3D:
 	var tag := Label3D.new()
 	tag.name = "LevelTag"
 	tag.text = "L%d" % (layer_index + 1)
-	tag.position = _level_tag_position(layer_index)
-	tag.font_size = 16
+	tag.position = _level_tag_position(layer_index, idx)
+	tag.font_size = 15
 	tag.outline_size = 4
-	tag.pixel_size = 0.0075
+	tag.pixel_size = 0.0072
 	tag.modulate = Color(0.86, 0.91, 0.98, 0.88)
 	tag.outline_modulate = Color(0.025, 0.035, 0.055, 0.96)
 	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	tag.no_depth_test = true
 	return tag
 
-func _level_tag_position(layer_index: int) -> Vector3:
-	# Spread neighbouring level captions around the piece instead of using the
-	# same anchor for every plane. This reduces label-vs-piece collisions when
-	# several occupied cells line up through the STACK projection.
-	match layer_index % 5:
+func _level_tag_position(layer_index: int, idx: int) -> Vector3:
+	if board == null:
+		return Vector3(0.0, 0.28, -0.58)
+
+	var local_idx := idx % (board.size * board.size)
+	var cell_x := local_idx % board.size
+	var cell_y := int(local_idx / board.size)
+	var last := board.size - 1
+	var x_edge := cell_x == 0 or cell_x == last
+	var y_edge := cell_y == 0 or cell_y == last
+
+	# Edge/corner pieces get their caption physically outside the tile footprint.
+	# This is especially useful in STACK, where the centre is visually dense.
+	if x_edge or y_edge:
+		var ox := 0.0
+		var oz := 0.0
+		if cell_x == 0:
+			ox = -0.62
+		elif cell_x == last:
+			ox = 0.62
+		if cell_y == 0:
+			oz = -0.62
+		elif cell_y == last:
+			oz = 0.62
+		# A tiny layer-dependent tangent offset separates labels on aligned edges.
+		var layer_nudge := (float(layer_index) - (float(board.size) - 1.0) * 0.5) * 0.045
+		if abs(ox) > abs(oz):
+			oz += layer_nudge
+		else:
+			ox += layer_nudge
+		return Vector3(ox, 0.28, oz)
+
+	# Interior pieces keep a compact alternating caption anchor.
+	match layer_index % 4:
 		0:
-			return Vector3(-0.44, 0.27, 0.24)
+			return Vector3(-0.42, 0.28, 0.34)
 		1:
-			return Vector3(0.44, 0.27, 0.24)
+			return Vector3(0.42, 0.28, 0.34)
 		2:
-			return Vector3(0.0, 0.31, -0.42)
-		3:
-			return Vector3(-0.44, 0.27, -0.24)
+			return Vector3(0.42, 0.28, -0.34)
 		_:
-			return Vector3(0.44, 0.27, -0.24)
+			return Vector3(-0.42, 0.28, -0.34)
 
 func _piece_target_scale(layer_index: int) -> Vector3:
 	if not stack_mode or board == null or board.size <= 1:
