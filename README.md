@@ -62,3 +62,8 @@ Recommended before Play Store release:
 - Add release keystore + signed AAB pipeline.
 - Device-test 3×3, 4×4 and 5×5 camera framing on several aspect ratios.
 - Profile Expert AI on mid-range Android hardware and tune time budgets.
+
+
+## Testes
+
+A lógica de linhas vencedoras tem testes em tests/test_winning_lines.py. Execute-os com pytest no ambiente Python. O workflow Android produz um APK de debug para testes; não é um build assinado para distribuição.
